@@ -92,7 +92,15 @@ def _interp_continuous(grid: F64, d: F64, values: Array) -> F64:
         if finite.sum() < 2:
             return np.full(grid.size, np.nan)
         d, values = d[finite], values[finite]
-    return np.interp(grid, d, values)
+    out = np.interp(grid, d, values)
+    # Past the last sample (only possible when `rescale` stretches a lap by < one step), extend
+    # the final segment linearly instead of holding: holding `time` there would drop up to a
+    # step's worth of travel time at the line (~10 ms at 1 m / 330 km/h).
+    tail = grid > d[-1]
+    if tail.any():
+        slope = (values[-1] - values[-2]) / (d[-1] - d[-2])
+        out[tail] = values[-1] + slope * (grid[tail] - d[-1])
+    return out
 
 
 def _hold_discrete(grid: F64, d: F64, values: Array) -> Array:
@@ -132,14 +140,37 @@ def resample_to_distance(
     if length_m is not None:
         d = d * (length_m / raw_length)
     grid = distance_grid(length_m or raw_length, step_m)
+    meta = replace(trace.meta, raw_length_m=raw_length, normalised_to_m=length_m)
+    return ResampledLap(_sample(trace.channels, d, grid), step_m=step_m, meta=meta)
 
+
+def nominal_length(lap: ResampledLap) -> float:
+    """Length the lap's grid represents: its normalisation target, else its raw length."""
+    return lap.meta.normalised_to_m or lap.meta.raw_length_m or lap.grid_end_m
+
+
+def rescale(lap: ResampledLap, length_m: float, step_m: float | None = None) -> ResampledLap:
+    """Re-grid an already resampled lap to normalised length `length_m` (and optionally a new step).
+
+    Used to bring a stored lap onto a reference lap's grid. Grid points past the source lap's last
+    sample (at most one source step) hold the last value.
+    """
+    _check_positive("length_m", length_m)
+    step = lap.step_m if step_m is None else step_m
+    _check_positive("step_m", step)
+    d = lap[schema.DISTANCE] * (length_m / nominal_length(lap))
+    grid = distance_grid(length_m, step)
+    meta = replace(lap.meta, normalised_to_m=length_m)
+    return ResampledLap(_sample(lap.channels, d, grid), step_m=step, meta=meta)
+
+
+def _sample(channels: dict[str, Array], d: F64, grid: F64) -> dict[str, Array]:
     out: dict[str, Array] = {schema.DISTANCE: grid}
-    for name, values in trace.channels.items():
+    for name, values in channels.items():
         if name == schema.DISTANCE:
             continue
         if schema.CHANNELS[name] is schema.Kind.CONTINUOUS:
             out[name] = _interp_continuous(grid, d, values)
         else:
             out[name] = _hold_discrete(grid, d, values)
-    meta = replace(trace.meta, raw_length_m=raw_length, normalised_to_m=length_m)
-    return ResampledLap(out, step_m=step_m, meta=meta)
+    return out
