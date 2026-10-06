@@ -6,8 +6,9 @@ slower (losing time) at that point.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -15,6 +16,9 @@ import numpy.typing as npt
 from f1lap import schema
 from f1lap.resample import nominal_length, rescale
 from f1lap.trace import ResampledLap
+
+if TYPE_CHECKING:
+    from f1lap.circuit import Segment
 
 F64 = npt.NDArray[np.float64]
 
@@ -68,8 +72,9 @@ def compare(reference: ResampledLap, other: ResampledLap) -> LapComparison:
 
 @dataclass(frozen=True, slots=True)
 class SectorTable:
-    """Equal-length micro-sectors (Structure of Arrays, one entry per sector)."""
+    """Per-sector comparison (Structure of Arrays, one entry per sector)."""
 
+    names: tuple[str, ...]
     start_m: F64
     end_m: F64
     ref_time_s: F64
@@ -81,7 +86,7 @@ class SectorTable:
     def __len__(self) -> int:
         return int(self.start_m.size)
 
-    def rows(self) -> list[dict[str, float]]:
+    def rows(self) -> list[dict[str, Any]]:
         cols = {
             "start_m": self.start_m,
             "end_m": self.end_m,
@@ -91,7 +96,10 @@ class SectorTable:
             "ref_min_speed": self.ref_min_speed,
             "other_min_speed": self.other_min_speed,
         }
-        return [{k: float(v[i]) for k, v in cols.items()} for i in range(len(self))]
+        return [
+            {"name": self.names[i], **{k: float(v[i]) for k, v in cols.items()}}
+            for i in range(len(self))
+        ]
 
 
 def micro_sectors(cmp: LapComparison, count: int = 25) -> SectorTable:
@@ -103,10 +111,27 @@ def micro_sectors(cmp: LapComparison, count: int = 25) -> SectorTable:
     if not 1 <= count <= n - 1:
         raise ValueError(f"sector count must be in [1, {n - 1}], got {count}")
     bounds = np.round(np.linspace(0, n - 1, count + 1)).astype(np.intp)
+    return _table(cmp, bounds, [f"S{i}" for i in range(1, count + 1)])
+
+
+def corner_table(cmp: LapComparison, segments: Sequence[Segment]) -> SectorTable:
+    """Per-corner-complex comparison; `segments` from `circuit.corner_segments` on the reference."""
+    if not segments:
+        raise ValueError("no segments")
+    edges = np.array([segments[0].start_m] + [s.end_m for s in segments])
+    bounds = np.round(edges / cmp.reference.step_m).astype(np.intp)
+    np.clip(bounds, 0, len(cmp.reference) - 1, out=bounds)
+    if np.any(np.diff(bounds) <= 0):
+        raise ValueError("segments must be at least one grid step long and in order")
+    return _table(cmp, bounds, [s.name for s in segments])
+
+
+def _table(cmp: LapComparison, bounds: npt.NDArray[np.intp], names: Sequence[str]) -> SectorTable:
     starts = bounds[:-1]
     ref_t, oth_t = cmp.reference[schema.TIME], cmp.other[schema.TIME]
     d = cmp.distance
     return SectorTable(
+        names=tuple(names),
         start_m=d[starts],
         end_m=d[bounds[1:]],
         ref_time_s=np.diff(ref_t[bounds]),

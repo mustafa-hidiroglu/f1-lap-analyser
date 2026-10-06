@@ -22,13 +22,24 @@ uv sync
 uv run f1lap fetch 2024 Monza Q LEC            # fastest lap; or --lap 17
 uv run f1lap import export.csv --driver VER    # FastF1 or canonical column names
 uv run f1lap info data/2024_italian_grand_prix_q_lec_l20.parquet
-uv run f1lap delta data/…_q_lec_l20.parquet data/…_q_sai_l17.parquet --sectors 12 --json report.json
+uv run f1lap corners data/…_qualifying_lec_l20.parquet       # corners located on this lap
+uv run f1lap delta data/…_qualifying_lec_l20.parquet data/…_qualifying_sai_l17.parquet --json report.json
 ```
 
 `delta` puts the compared lap on the reference lap's grid (rescaling its distance to the reference
-length), prints the delta at the line and a micro-sector table (time per sector, delta, minimum
+length), prints the delta at the line and a per-corner table (time per segment, delta, minimum
 speed), and optionally writes the same report as JSON. Deltas are `other − reference`:
-positive = slower.
+positive = slower. `--sectors N` uses N equal micro-sectors instead of corners.
+
+### Circuit model
+
+Corners come from, in order: `--circuit file.json`; the circuit `fetch` saved to
+`data/circuits/` (FastF1's corner markers); or detection from the reference lap's telemetry
+(speed minima ≥ 20 km/h deep; flat-out kinks are skipped). `--detect` forces detection.
+
+FastF1 markers are hand-placed labels, not apexes (Monza's Parabolica marker is 52 m past the
+slowest point). Each marker is snapped to the lap's own X/Y line within ±300 m. Corners closer than
+150 m form one complex (`T1-2`, `T8-10`); segment boundaries sit midway between complexes.
 
 Global options (before the subcommand): `--step 0.5` grid spacing, `--length 5793` normalise lap
 length, `-o path.parquet`, `--config f1lap.toml`.
@@ -36,7 +47,8 @@ length, `-o path.parquet`, `--config f1lap.toml`.
 ```python
 from f1lap import resample_to_distance
 from f1lap.ingest.fastf1_source import fetch_lap_async  # non-blocking (worker thread)
-from f1lap.delta import compare, micro_sectors, summary
+from f1lap.delta import compare, corner_table, micro_sectors, summary
+from f1lap.circuit import corner_segments, detect_corners
 ```
 
 ## Data model
@@ -81,7 +93,10 @@ uv run ruff check . && uv run mypy src tests
 
 1. ~~Ingestion + distance resampling~~
 2. ~~Delta-time trace vs reference lap, micro-sectors~~
-3. Corner extraction: braking zones, apex speed, throttle pickup; entry/mid/exit time loss
+3. Corners: ~~circuit model + per-corner delta~~; braking zones, apex speed, throttle pickup;
+   entry/mid/exit time loss
 4. Driver metrics: throttle smoothness, full-throttle time, brake onset steepness
-5. Interactive traces (speed, delta, throttle/brake, gear) and JSON/HTML reports
-6. Native kernels (C++/nanobind) where profiling shows NumPy is the bottleneck
+5. Lap rating vs the driver's theoretical best and the field
+6. Native macOS app UI: interactive traces (speed, delta, throttle/brake, gear), reports.
+   The `f1lap` core stays UI-agnostic: typed results + JSON-ready summaries, async I/O.
+7. Native kernels (C++/nanobind) where profiling shows NumPy is the bottleneck
