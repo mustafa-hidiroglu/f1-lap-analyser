@@ -41,14 +41,15 @@ struct SessionSidebar: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Season").foregroundStyle(.secondary)
-                Spacer()
-                Stepper(String(model.year), value: $model.year, in: 2018...2030)
-                    .monospacedDigit()
+            Picker("Season", selection: $model.year) {
+                ForEach(AppModel.seasons, id: \.self) { Text(String($0)).tag($0) }
             }
+            .pickerStyle(.menu)
             .padding(10)
-            .onChange(of: model.year) { Task { await model.loadSchedule() } }
+            .onChange(of: model.year) {
+                if model.otherYear == model.year { model.otherYear = nil }
+                Task { await model.loadSchedule() }
+            }
 
             List(selection: $model.eventRound) {
                 ForEach(model.events) { event in
@@ -81,8 +82,21 @@ struct LapBar: View {
     var body: some View {
         @Bindable var model = model
         HStack(spacing: 16) {
-            LapPicker(title: "Reference", color: Palette.reference, choice: $model.reference)
-            LapPicker(title: "Compared", color: Palette.other, choice: $model.other)
+            LapPicker(title: "Reference", color: Palette.reference, info: model.info,
+                      choice: $model.reference)
+            LapPicker(title: "Compared", color: Palette.other, info: model.otherSessionInfo,
+                      choice: $model.other) {
+                Picker("Season", selection: $model.otherYear) {
+                    Text("Same session").tag(Int?.none)
+                    Divider()
+                    ForEach(AppModel.seasons.filter { $0 != model.year }, id: \.self) {
+                        Text(String($0)).tag(Optional($0))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 130)
+                .help("Compare against the same event in another season")
+            }
             Spacer()
             Button("Compare", systemImage: "chart.xyaxis.line") { model.compare() }
                 .keyboardShortcut(.return, modifiers: .command)
@@ -94,19 +108,31 @@ struct LapBar: View {
     }
 }
 
-struct LapPicker: View {
+struct LapPicker<Accessory: View>: View {
     @Environment(AppModel.self) private var model
     let title: String
     let color: Color
+    let info: SessionInfo?
     @Binding var choice: LapChoice
+    @ViewBuilder var accessory: Accessory
+
+    init(title: String, color: Color, info: SessionInfo?, choice: Binding<LapChoice>,
+         @ViewBuilder accessory: () -> Accessory = { EmptyView() }) {
+        self.title = title
+        self.color = color
+        self.info = info
+        _choice = choice
+        self.accessory = accessory()
+    }
 
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 9, height: 9)
-            Text(title).foregroundStyle(.secondary)
+            Text(title).foregroundStyle(.secondary).fixedSize()
+            accessory
             Picker(title, selection: $choice.driver) {
                 Text("Driver").tag(String?.none)
-                ForEach(model.info?.drivers ?? []) { d in
+                ForEach(info?.drivers ?? []) { d in
                     Text(d.position.map { "P\($0)  \(d.code)" } ?? d.code).tag(Optional(d.code))
                 }
             }
@@ -115,7 +141,7 @@ struct LapPicker: View {
             .onChange(of: choice.driver) { choice.lap = nil }
             Picker("Lap", selection: $choice.lap) {
                 Text("Fastest").tag(Int?.none)
-                ForEach(model.laps(of: choice.driver)) { lap in
+                ForEach(model.laps(of: choice.driver, in: info)) { lap in
                     Text("L\(lap.lap)  \(Fmt.lapTime(lap.timeS))\(lap.valid ? "" : "  ✕")"
                          + (lap.personalBest ? "  ★" : ""))
                         .tag(Optional(lap.lap))
@@ -136,8 +162,14 @@ struct StatusBar: View {
         if model.busy != nil || model.error != nil {
             HStack(spacing: 8) {
                 if let busy = model.busy {
-                    ProgressView().controlSize(.small)
-                    Text(busy)
+                    if let p = model.progress, let done = p.done, let total = p.total, total > 0 {
+                        ProgressView(value: Double(done), total: Double(total))
+                            .frame(width: 120)
+                        Text("\(p.message) — \(done)/\(total)").monospacedDigit()
+                    } else {
+                        ProgressView().controlSize(.small)
+                        Text(model.progress?.message ?? busy)
+                    }
                 } else if let error = model.error {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
                     Text(error).lineLimit(2).textSelection(.enabled)

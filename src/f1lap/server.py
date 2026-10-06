@@ -9,13 +9,15 @@
 - Lap traces are written as Structure-of-Arrays binary files (`binary.write_soa`) and returned
   as a path plus layout, not as JSON arrays.
 
-Methods: ping, schedule, session, compare, rate.
+Methods: ping, schedule, session, compare, rate. While a request runs, the server may send
+`progress` notifications (`{"method": "progress", "params": {"message", "done"?, "total"?}}`).
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -24,7 +26,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
@@ -92,8 +94,10 @@ def _lap_ref(p: dict[str, Any], name: str) -> tuple[str, LapSelector]:
 class Server:
     cache_dir: Path
     step_m: float = 1.0
-    max_sessions: int = 2
+    max_sessions: int = 3  # a cross-year comparison holds two, plus one being rated
     keep_traces: int = 20
+    #: Sends a protocol message from the worker thread (set by `serve`); None drops progress.
+    notify: Callable[[dict[str, Any]], None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self._sessions: OrderedDict[tuple[int, str, str], LoadedSession] = OrderedDict()
@@ -151,7 +155,10 @@ class Server:
         if key in self._sessions:
             self._sessions.move_to_end(key)
             return self._sessions[key]
+        self._progress(f"Loading {year} {event} {name} (first load downloads it)")
         loaded = LoadedSession.load(year, event, name, cache_dir=self.cache_dir, step_m=self.step_m)
+        loaded.progress = lambda done, total: self._progress(
+            f"Reading {total} laps of {year} {event} {name}", done, total)
         self._sessions[key] = loaded
         while len(self._sessions) > self.max_sessions:
             self._sessions.popitem(last=False)  # free the least recently used session
@@ -186,9 +193,10 @@ class Server:
         return self._session(p).info()
 
     def compare(self, p: dict[str, Any]) -> dict[str, Any]:
-        sd = self._session(p)
-        ref = sd.lap(*_lap_ref(p, "reference"))
-        oth = sd.lap(*_lap_ref(p, "other"))
+        # Each side may name its own year/event/session (e.g. one driver at one track across
+        # seasons); the reference side's session supplies the circuit and corner segments.
+        sd, ref = self._side(p, "reference")
+        _, oth = self._side(p, "other")
         cmp = compare(ref, oth)
         segments = corner_segments(sd.circuit, cmp.reference)
         report = summary(cmp, corner_table(cmp, segments))
@@ -216,6 +224,18 @@ class Server:
         return result
 
     # -- helpers --------------------------------------------------------------------------------
+
+    def _side(self, p: dict[str, Any], name: str) -> tuple[LoadedSession, Any]:
+        side = _param(p, name, dict)
+        sd = self._session(p | {k: side[k] for k in ("year", "event", "session") if k in side})
+        return sd, sd.lap(*_lap_ref(p, name))
+
+    def _progress(self, message: str, done: int | None = None, total: int | None = None) -> None:
+        if self.notify is not None:
+            params: dict[str, Any] = {"message": message}
+            if total is not None:
+                params |= {"done": done, "total": total}
+            self.notify({"jsonrpc": "2.0", "method": "progress", "params": params})
 
     def _circuit(self, sd: LoadedSession, lap: Any) -> dict[str, Any]:
         segments = corner_segments(sd.circuit, lap)
@@ -268,6 +288,19 @@ async def serve(server: Server, proto_out: int) -> None:
     except ValueError:  # regular file (e.g. `> log.txt`): writes never wait on a reader
         pass
     pending: set[asyncio.Task[None]] = set()
+
+    def send(data: bytes) -> None:
+        if writer is None:
+            out.write(data)
+        else:
+            writer.write(data)  # progress lines are tiny: no drain needed
+
+    def notify(msg: dict[str, Any]) -> None:
+        # Worker-thread progress hops onto the loop, so stdout is only ever written from there.
+        with contextlib.suppress(RuntimeError):  # loop already closed: drop it
+            loop.call_soon_threadsafe(send, encode(msg))
+
+    server.notify = notify
 
     async def respond(line: str) -> None:
         reply = await server.handle(line)

@@ -125,6 +125,15 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
         await client.shutdown()
     }
 
+    @Test func deliversProgressNotifications() async throws {
+        let client = shell(#"read l; echo '{"jsonrpc":"2.0","method":"progress","params":{"message":"Reading laps","done":25,"total":900}}'; echo '{"jsonrpc":"2.0","id":1,"result":7}'; read l"#)
+        defer { Task { await client.shutdown() } }
+        let value: Int = try await client.call("rate", NoParams())
+        #expect(value == 7)
+        var updates = client.progress.makeAsyncIterator()
+        #expect(await updates.next() == SidecarProgress(message: "Reading laps", done: 25, total: 900))
+    }
+
     @Test func launchFailure() async {
         let client = SidecarClient(config: SidecarConfig(
             executable: URL(filePath: "/nonexistent/python"), arguments: []))
@@ -173,6 +182,11 @@ struct LiveTests {
         #expect(traces["distance"].count == result.grid.samples)
         #expect(traces["delta"].last.map { abs($0 - result.finalDeltaS) < 1e-9 } == true)
         #expect(traces["ref.speed"].max().map { $0 > 300 } == true)
+
+        // Per-side sessions: the reference session also given explicitly for the compared lap.
+        let (again, _) = try await svc.compare(
+            reference: (key, LapRef(driver: "LEC")), other: (key, LapRef(driver: "SAI")))
+        #expect(again.finalDeltaS == result.finalDeltaS && again.other.year == 2024)
 
         await #expect {
             _ = try await svc.rate(key, lap: LapRef(driver: "XXX"))

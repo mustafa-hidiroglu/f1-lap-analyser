@@ -80,7 +80,16 @@ def lap_from_row(ses: Any, row: Any) -> LapTrace:
         event=str(ses.event["EventName"]),
         session=str(ses.name),
     )
-    return trace_from_frame(row.get_telemetry(), meta)
+    return trace_from_frame(lap_telemetry(row), meta)
+
+
+def lap_telemetry(row: Any) -> Any:
+    """`Lap.get_telemetry()` without its driver-ahead channels: the same merge of car and
+    position data, sample for sample, but ~5x faster (`add_driver_ahead` scans every other car,
+    ~45 ms per lap). Rating a race resamples ~900 laps, so this is most of its run time."""
+    pos = row.get_pos_data(pad=1, pad_side="both")
+    car = row.get_car_data(pad=1, pad_side="both").add_distance().add_relative_distance()
+    return pos.merge_channels(car).slice_by_lap(row, interpolate_edges=True)
 
 
 def circuit_from_frame(

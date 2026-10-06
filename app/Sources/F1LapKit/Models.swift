@@ -47,6 +47,7 @@ public struct LapLabel: Decodable, Sendable, Hashable {
     public let driver: String
     public let lapNumber: Int?
     public let lapTimeS: Double?
+    public let year: Int?
 }
 
 // MARK: - compare

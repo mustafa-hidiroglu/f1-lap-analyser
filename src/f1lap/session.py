@@ -1,12 +1,14 @@
 """A loaded FastF1 session with memoised, resampled laps.
 
-Extracting and resampling telemetry dominates analysis time (~60 ms per lap; a qualifying
-session has ~90 valid laps), so laps, the circuit and the reference lap are computed once per
-session and reused across comparisons and ratings. Not thread-safe: use from one thread.
+Extracting and resampling telemetry dominates analysis time (~11 ms per lap; a qualifying
+session has ~90 valid laps, a race ~900), so laps, the circuit and the reference lap are
+computed once per session and reused across comparisons and ratings. Not thread-safe: use
+from one thread.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,8 @@ class LoadedSession:
         self.step_m = step_m
         self.quick_threshold = quick_threshold
         self._laps: dict[tuple[str, int], ResampledLap] = {}
+        #: Called as `progress(done, total)` while `valid_laps` is built (set by the server).
+        self.progress: Callable[[int, int], None] | None = None
 
     @classmethod
     def load(
@@ -51,8 +55,13 @@ class LoadedSession:
     @cached_property
     def valid_laps(self) -> list[ResampledLap]:
         """Accurate, not deleted, no pit in/out, within `quick_threshold` of the fastest lap."""
-        rows = valid_rows(self.ses, self.quick_threshold)
-        return [self._resampled(row) for _, row in rows.iterlaps()]
+        rows = [row for _, row in valid_rows(self.ses, self.quick_threshold).iterlaps()]
+        laps = []
+        for i, row in enumerate(rows):
+            if self.progress is not None and i % 25 == 0:
+                self.progress(i, len(rows))
+            laps.append(self._resampled(row))
+        return laps
 
     @cached_property
     def reference(self) -> ResampledLap:

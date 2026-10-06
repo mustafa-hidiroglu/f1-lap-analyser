@@ -56,6 +56,19 @@ public enum SidecarError: Error, Equatable, LocalizedError {
     }
 }
 
+/// A `progress` notification: what the sidecar is doing during a long request.
+public struct SidecarProgress: Decodable, Sendable, Equatable {
+    public let message: String
+    public let done: Int?
+    public let total: Int?
+
+    public init(message: String, done: Int? = nil, total: Int? = nil) {
+        self.message = message
+        self.done = done
+        self.total = total
+    }
+}
+
 /// JSON-RPC 2.0 client for the sidecar: newline-delimited JSON over the child's stdin/stdout.
 ///
 /// Requests run concurrently and are matched to replies by id. If the sidecar exits, in-flight
@@ -69,9 +82,14 @@ public actor SidecarClient {
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<Data, any Error>] = [:]
     private var stderrTail: [String] = []
+    private let progressSink: AsyncStream<SidecarProgress>.Continuation
+
+    /// Progress notifications from the sidecar, newest only (for a single status line).
+    public nonisolated let progress: AsyncStream<SidecarProgress>
 
     public init(config: SidecarConfig) {
         self.config = config
+        (progress, progressSink) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
 
     /// Calls `method` and decodes its `result` as `R`.
@@ -193,6 +211,12 @@ public actor SidecarClient {
             log.error("unparseable reply: \(String(decoding: line.prefix(200), as: UTF8.self))")
             return
         }
+        if head.id == nil, head.method == "progress" {
+            if let note = try? Self.decoder.decode(Notification.self, from: line) {
+                progressSink.yield(note.params)
+            }
+            return
+        }
         guard let id = head.id, let continuation = pending.removeValue(forKey: id) else {
             if let error = head.error {
                 log.error("sidecar error without request: \(error.message)")
@@ -257,7 +281,12 @@ public actor SidecarClient {
             let message: String
         }
         let id: Int?
+        let method: String?
         let error: ErrorBody?
+    }
+
+    private struct Notification: Decodable {
+        let params: SidecarProgress
     }
 
     private struct ResultEnvelope<R: Decodable>: Decodable {

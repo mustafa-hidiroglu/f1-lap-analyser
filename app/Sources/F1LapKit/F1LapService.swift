@@ -56,17 +56,34 @@ public struct F1LapService: Sendable {
         try await client.call("session", key)
     }
 
-    /// Compares two laps and loads the trace file the sidecar wrote.
+    /// Compares two laps of one session and loads the trace file the sidecar wrote.
     public func compare(
         _ key: SessionKey, reference: LapRef, other: LapRef
     ) async throws -> (CompareResult, Traces) {
-        struct P: Encodable, Sendable {
-            let year: Int, event: String, session: String, reference: LapRef, other: LapRef
+        try await compare(reference: (key, reference), other: (key, other))
+    }
+
+    /// Compares laps from two sessions (e.g. one driver at one track in different years). The
+    /// reference session supplies the circuit and corner segments.
+    public func compare(
+        reference: (SessionKey, LapRef), other: (SessionKey, LapRef)
+    ) async throws -> (CompareResult, Traces) {
+        struct Side: Encodable, Sendable {
+            let key: SessionKey, lap: LapRef
+            func encode(to encoder: any Encoder) throws {
+                try lap.encode(to: encoder)
+                try key.encode(to: encoder)
+            }
         }
+        struct P: Encodable, Sendable {
+            let year: Int, event: String, session: String, reference: Side, other: Side
+        }
+        let key = reference.0
         let result: CompareResult = try await client.call(
             "compare",
             P(year: key.year, event: key.event, session: key.session,
-              reference: reference, other: other))
+              reference: Side(key: reference.0, lap: reference.1),
+              other: Side(key: other.0, lap: other.1)))
         let traces = try await Self.loadTraces(result.traces)
         return (result, traces)
     }

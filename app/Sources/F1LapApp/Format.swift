@@ -19,8 +19,9 @@ enum Fmt {
         return String(format: "%.0f", v)
     }
 
-    static func lap(_ label: LapLabel) -> String {
-        label.lapNumber.map { "\(label.driver) L\($0)" } ?? label.driver
+    static func lap(_ label: LapLabel, year: Bool = false) -> String {
+        let name = label.lapNumber.map { "\(label.driver) L\($0)" } ?? label.driver
+        return year ? label.year.map { "\(name) · \($0)" } ?? name : name
     }
 }
 

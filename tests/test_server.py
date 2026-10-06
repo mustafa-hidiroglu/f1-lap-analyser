@@ -170,3 +170,20 @@ def test_stdio_process(tmp_path: Path, stdout_kind: str) -> None:
     lines = [json.loads(x) for x in out.decode().splitlines()]
     assert [x.get("id") for x in lines] == [1, None]  # stdout carries protocol lines only
     assert lines[1]["error"]["code"] == PARSE_ERROR
+
+
+def test_compare_sides_from_different_sessions(server: Server, make_lap: MakeLap) -> None:
+    other = FakeSession(make_lap)
+    server._sessions[(2026, "synthetic", "q")] = other  # type: ignore[assignment]
+    res = _rpc(server, "compare", **SES, reference={"driver": "AAA"},
+               other={"driver": "AAA", "year": 2026})["result"]
+    assert res["final_delta_s"] == pytest.approx(0.0, abs=1e-9)  # same synthetic lap
+    assert list(server._sessions)[-1] == (2026, "synthetic", "q")  # other side used its year
+
+
+def test_progress_notifications(server: Server) -> None:
+    sent: list[dict[str, Any]] = []
+    server.notify = sent.append
+    server._progress("Reading laps", 25, 900)
+    assert sent == [{"jsonrpc": "2.0", "method": "progress",
+                     "params": {"message": "Reading laps", "done": 25, "total": 900}}]

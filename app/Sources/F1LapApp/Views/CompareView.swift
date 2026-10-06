@@ -52,8 +52,12 @@ private struct Summary: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 28) {
-            stat(Fmt.lap(result.reference), Fmt.lapTime(result.reference.lapTimeS), Palette.reference)
-            stat(Fmt.lap(result.other), Fmt.lapTime(result.other.lapTimeS), Palette.other)
+            // Name the season when the laps come from different years.
+            let years = result.reference.year != result.other.year
+            stat(Fmt.lap(result.reference, year: years), Fmt.lapTime(result.reference.lapTimeS),
+                 Palette.reference)
+            stat(Fmt.lap(result.other, year: years), Fmt.lapTime(result.other.lapTimeS),
+                 Palette.other)
             stat("Delta", Fmt.delta(result.lapTimeDeltaS ?? result.finalDeltaS),
                  Palette.delta(result.lapTimeDeltaS ?? result.finalDeltaS))
             stat("Best gain", "\(Fmt.delta(result.maxGainS)) @ \(Int(result.maxGainAtM)) m", .secondary)
@@ -157,6 +161,7 @@ private struct TraceCharts: View {
                     }
             }
             .frame(height: height)
+            .padding(.top, corners ? 14 : 0)  // room for the corner labels above the plot
         }
     }
 }

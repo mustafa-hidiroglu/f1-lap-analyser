@@ -157,14 +157,16 @@ sequenceDiagram
 | `ping` | — | protocol version, cache dir |
 | `schedule` | `year` | events with round, date, format, session names |
 | `session` | `year, event, session` | drivers (team, colour, position) and every lap with validity |
-| `compare` | session + `reference`/`other`: `{driver, lap?}` | delta summary, corner table, phases, metrics for both laps, circuit (corners, segments, track outline), trace file |
+| `compare` | session + `reference`/`other`: `{driver, lap?, year?, event?, session?}` (a side's own session overrides the top-level one, e.g. one driver across seasons; the reference session supplies the circuit) | delta summary, corner table, phases, metrics for both laps, circuit (corners, segments, track outline), trace file |
 | `rate` | session + `driver, lap?` | `LapRating.to_dict()` + circuit + reference lap |
 
+- Long requests send `progress` notifications (no `id`): `{"message", "done"?, "total"?}`.
 - Errors: standard JSON-RPC codes, `-32000` for analysis failures (unknown driver, missing data).
   Non-finite numbers are sent as `null`.
 - The event loop never blocks. FastF1 work runs on one worker thread, so `ping` answers while a
-  session loads. The 2 most recent sessions stay loaded, with resampled laps memoised (first
-  `rate` of a session ~5 s, then ~20 ms).
+  session loads. The 3 most recent sessions stay loaded, with resampled laps memoised (first
+  `rate` of a session ~1 s for qualifying, ~12 s for a race; then ~20 ms). Telemetry is merged
+  without FastF1's driver-ahead channels: identical samples, ~5x faster.
 - `.f1soa` traces: Structure-of-Arrays, each column contiguous little-endian `f64`/`i16` at an
   8-byte-aligned offset, described by `columns: [{name, dtype, offset, count}]`. The 20 newest are
   kept.
@@ -189,7 +191,7 @@ app/scripts/bundle.sh     # release build → app/build/F1Lap.app (runs this che
 ```
 
 Dev shortcuts for the app: `F1LAP_OPEN=2024/Monza/Qualifying/LEC/SAI[/rating]` opens a session
-and compares; `F1LAP_SNAPSHOT=shot.png` writes the window to a PNG once results load, then quits.
+and compares (`…/HAM/HAM@2026` takes the compared lap from the same event in 2026); `F1LAP_SNAPSHOT=shot.png` writes the window to a PNG once results load, then quits.
 
 ## Roadmap
 
