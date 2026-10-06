@@ -35,7 +35,9 @@ from f1lap.trace import ResampledLap
 F64 = npt.NDArray[np.float64]
 
 FULL_THROTTLE: Final = 95.0  # % — FastF1 reports full throttle as 99-100
-BRAKE_ON: Final = 0.5
+BRAKE_ON: Final = 0.5  # on/off brake data (FastF1)
+PRESSURE_ON: Final = 0.05  # pressure data: share of peak pressure that counts as braking
+PRESSURE_FRACTION: Final = 0.5  # pressure data: most braking samples strictly between 0 and 1
 PICKUP_THROTTLE: Final = 20.0  # % with brake off counts as back on the throttle
 APEX_SEARCH_M: Final = 150.0  # search for the apex this far either side of the corner markers
 PHASES: Final = ("approach", "braking", "mid", "exit", "straight")
@@ -66,6 +68,24 @@ class CornerPoints:
         return (self.entry_m, self.mid_start_m, self.mid_end_m, self.full_throttle_m)
 
 
+def has_pressure(brake: npt.NDArray[np.float64]) -> bool:
+    """True if `brake` carries pressure rather than an on/off flag (interpolated on/off data
+    only has fractional values on the grid points straddling each transition)."""
+    on = brake > 0.05
+    if not on.any():
+        return False
+    fractional = on & (brake < 0.95)
+    return bool(fractional.sum() / on.sum() > PRESSURE_FRACTION)
+
+
+def braking_mask(brake: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
+    """Where the driver is braking: brake ≥ BRAKE_ON for on/off data, or above PRESSURE_ON of
+    the lap's peak pressure for pressure data."""
+    if has_pressure(brake):
+        return np.asarray(brake > PRESSURE_ON * brake.max())
+    return np.asarray(brake >= BRAKE_ON)
+
+
 def _first(mask: npt.NDArray[np.bool_]) -> int | None:
     hits = np.flatnonzero(mask)
     return int(hits[0]) if hits.size else None
@@ -86,8 +106,11 @@ def corner_points(lap: ResampledLap, seg: Segment, mid_speed_tol: float = 0.05) 
     d = lap[schema.DISTANCE]
     speed = lap["speed"][lo : hi + 1]
     throttle = lap["throttle"][lo : hi + 1] if "throttle" in lap.channels else None
-    brake = lap["brake"][lo : hi + 1] if "brake" in lap.channels else np.zeros(speed.size)
-    braking = brake >= BRAKE_ON
+    braking = (
+        braking_mask(lap["brake"])[lo : hi + 1]
+        if "brake" in lap.channels
+        else np.zeros(speed.size, dtype=bool)
+    )
 
     # Apex: slowest point near the corner markers (local indices from here on).
     a_lo = max(0, round((min(seg.apex_m) - APEX_SEARCH_M) / step) - lo)

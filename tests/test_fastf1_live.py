@@ -68,3 +68,17 @@ def test_monza_lap_rating() -> None:
     assert r.drivers == 20 and r.laps > 50
     assert r.ultimate_s < 79.327 <= r.lap_time_s  # below pole; LEC was P3
     assert r.theoretical_best_s <= r.lap_time_s and 0 <= r.score <= 100
+
+
+def test_monza_driver_metrics() -> None:
+    from f1lap.circuit import corner_segments
+    from f1lap.ingest.fastf1_source import circuit_from_session, lap_from_session, load_session
+    from f1lap.metrics import lap_metrics
+
+    ses = load_session(2024, "Monza", "Q", cache_dir=Path(__file__).parents[1] / "cache")
+    lap = resample_to_distance(lap_from_session(ses, "LEC"), 1.0)
+    m = lap_metrics(lap, corner_segments(circuit_from_session(ses), lap))
+    assert 65 < m.pct(m.full_throttle_s) < 82  # Monza: ~3/4 of the lap flat out
+    assert m.brake_source == "on/off"
+    t1 = next(c for c in m.corners if c.name == "T1-2")
+    assert t1.peak_decel_g is not None and 4.0 < t1.peak_decel_g < 6.0  # from ~350 km/h

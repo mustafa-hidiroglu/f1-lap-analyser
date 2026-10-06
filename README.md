@@ -83,6 +83,24 @@ the finish line (checked to 0.0 ms on all 87 valid laps of 2024 Monza qualifying
 UIs should call `await rating.rate_fastf1_lap_async(...)`, which returns a typed `LapRating`
 (`.to_dict()` for JSON).
 
+### Driver metrics
+
+```sh
+uv run f1lap metrics data/…_lec_l20.parquet data/…_sai_l17.parquet   # side by side, --json
+```
+
+- **Lap**: time-weighted share at full throttle (≥ 95 %), braking, and coasting (throttle < 10 %,
+  brake off); ramp-weighted throttle smoothness.
+- **Per corner exit**: throttle smoothness = net rise / total throttle movement from the *final*
+  pickup to full throttle (1.0 = one clean push; a chicane's first corner is excluded), ramp time
+  and rate, and lifts (drops > 10 points).
+- **Per braking zone**: peak deceleration (g) and its 10-90 % rise time. FastF1 brake is on/off,
+  so deceleration comes from the speed trace, differentiated over ±0.25 s to match FastF1's
+  ~4 Hz speed sampling (Monza T1 ≈ 5 g). The window widens rise times by up to ~0.5 s: compare
+  them between laps from the same source, don't read them as absolute.
+- **Brake pressure** exports (most braking samples between 0 and 1) are detected automatically:
+  braking then starts at 5 % of peak pressure and the 10-90 % pressure rise time is reported.
+
 Global options (before the subcommand): `--step 0.5` grid spacing, `--length 5793` normalise lap
 length, `-o path.parquet`, `--config f1lap.toml`.
 
@@ -137,7 +155,7 @@ uv run ruff check . && uv run mypy src tests
 1. ~~Ingestion + distance resampling~~
 2. ~~Delta-time trace vs reference lap, micro-sectors~~
 3. ~~Corners: circuit model, per-corner delta, braking/mid/exit phases and key points~~
-4. Driver metrics: throttle smoothness, full-throttle time, brake onset steepness
+4. ~~Driver metrics: throttle smoothness, full-throttle time, braking steepness~~
 5. ~~Lap rating vs the driver's theoretical best and the field~~
 6. Native macOS app UI: interactive traces (speed, delta, throttle/brake, gear), reports.
    The `f1lap` core stays UI-agnostic: typed results + JSON-ready summaries, async I/O.

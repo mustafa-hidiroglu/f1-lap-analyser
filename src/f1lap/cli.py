@@ -16,7 +16,7 @@ from f1lap.circuit import Circuit, circuit_filename, corner_segments, detect_cor
 from f1lap.config import ConfigError, Settings, load_settings
 from f1lap.delta import compare, corner_table, micro_sectors, summary
 from f1lap.phases import CornerComparison, compare_corners
-from f1lap.rating import LapRating
+from f1lap.rating import LapEntry, LapRating
 from f1lap.resample import resample_to_distance
 from f1lap.store import lap_filename, read_lap, write_lap
 from f1lap.trace import LapMeta, LapTrace, ResampledLap, TraceError
@@ -65,6 +65,11 @@ def _parser() -> argparse.ArgumentParser:
                    help="use N equal micro-sectors instead of corners")
     _circuit_args(d)
     d.add_argument("--json", type=Path, default=None, help="write the report as JSON")
+
+    m = sub.add_parser("metrics", help="driver-input metrics of one or more stored laps")
+    m.add_argument("paths", type=Path, nargs="+", help="lap .parquet files")
+    _circuit_args(m)
+    m.add_argument("--json", type=Path, default=None, help="write the metrics as JSON")
 
     r = sub.add_parser("rate", help="rate a lap vs the driver's theoretical best and the field")
     r.add_argument("year", type=int)
@@ -175,6 +180,44 @@ def _print_phases(corners: list[CornerComparison]) -> None:
     print("(brake pt / pickup / full thr: + = later; min v: + = faster; brakes: ref/other count)")
 
 
+def _metrics(args: argparse.Namespace, settings: Settings) -> None:
+    from f1lap.metrics import lap_metrics
+
+    laps = [read_lap(p) for p in args.paths]
+    circuit = _circuit_for(laps[0], args, settings)
+    results = [lap_metrics(lap, corner_segments(circuit, lap)) for lap in laps]
+    names = [LapEntry.of(lap).label for lap in laps]
+    print(f"{'':16}" + "".join(f"{n:>11}" for n in names))
+    for label, attr in (("full throttle", "full_throttle_s"), ("braking", "braking_s"),
+                        ("coasting", "coasting_s")):
+        print(f"{label:16}" + "".join(f"{m.pct(getattr(m, attr)):>9.1f} %" for m in results))
+    print(f"{'thr smoothness':16}" + "".join(
+        f"{m.throttle_smoothness:>11.3f}" if m.throttle_smoothness is not None else f"{'-':>11}"
+        for m in results))
+    print(f"\n{'corner':>8} {'lap':>9} {'smooth':>7} {'ramp s':>7} {'lifts':>5} "
+          f"{'decel g':>7} {'rise s':>6}")
+
+    def f(x: float | None, spec: str) -> str:
+        return "-" if x is None else format(x, spec)
+
+    for k in range(len(results[0].corners)):
+        for j, m in enumerate(results):
+            cm = m.corners[k]
+            name = cm.name if j == 0 else ""
+            if cm.flat:
+                print(f"{name:>8} {names[j]:>9} {'flat':>7}")
+                continue
+            print(f"{name:>8} {names[j]:>9} {f(cm.throttle_smoothness, '.2f'):>7} "
+                  f"{f(cm.throttle_ramp_s, '.2f'):>7} {cm.throttle_lifts:>5} "
+                  f"{f(cm.peak_decel_g, '.2f'):>7} {f(cm.decel_rise_s, '.2f'):>6}")
+    print(f"(brake data: {results[0].brake_source}; decel rise = 10-90 % of peak, "
+          "comparable between laps, not absolute)")
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps([m.to_dict() for m in results], indent=2))
+        print(f"wrote {args.json}")
+
+
 def _rate(args: argparse.Namespace, settings: Settings) -> None:
     from f1lap.rating import rate_fastf1_lap
 
@@ -254,6 +297,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _delta(args, settings)
         elif args.command == "corners":
             _corners(args, settings)
+        elif args.command == "metrics":
+            _metrics(args, settings)
         elif args.command == "rate":
             _rate(args, settings)
         else:
