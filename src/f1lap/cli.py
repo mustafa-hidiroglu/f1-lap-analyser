@@ -16,6 +16,7 @@ from f1lap.circuit import Circuit, circuit_filename, corner_segments, detect_cor
 from f1lap.config import ConfigError, Settings, load_settings
 from f1lap.delta import compare, corner_table, micro_sectors, summary
 from f1lap.phases import CornerComparison, compare_corners
+from f1lap.rating import LapRating
 from f1lap.resample import resample_to_distance
 from f1lap.store import lap_filename, read_lap, write_lap
 from f1lap.trace import LapMeta, LapTrace, ResampledLap, TraceError
@@ -64,6 +65,14 @@ def _parser() -> argparse.ArgumentParser:
                    help="use N equal micro-sectors instead of corners")
     _circuit_args(d)
     d.add_argument("--json", type=Path, default=None, help="write the report as JSON")
+
+    r = sub.add_parser("rate", help="rate a lap vs the driver's theoretical best and the field")
+    r.add_argument("year", type=int)
+    r.add_argument("event", type=_event)
+    r.add_argument("session")
+    r.add_argument("driver")
+    r.add_argument("--lap", type=_lap_selector, default="fastest", help="lap number or 'fastest'")
+    r.add_argument("--json", type=Path, default=None, help="write the rating as JSON")
     return p
 
 
@@ -166,6 +175,38 @@ def _print_phases(corners: list[CornerComparison]) -> None:
     print("(brake pt / pickup / full thr: + = later; min v: + = faster; brakes: ref/other count)")
 
 
+def _rate(args: argparse.Namespace, settings: Settings) -> None:
+    from f1lap.rating import rate_fastf1_lap
+
+    step = settings.step_m if args.step is None else args.step
+    rating = rate_fastf1_lap(
+        args.year, args.event, args.session, args.driver, args.lap,
+        cache_dir=settings.cache_dir, step_m=step,
+    )
+    print_rating(rating)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(rating.to_dict(), indent=2))
+        print(f"wrote {args.json}")
+
+
+def print_rating(rating: LapRating) -> None:
+    r = rating
+    print(f"{r.lap.label}  {r.lap_time_s:.3f} s   vs {r.laps} laps from {r.drivers} drivers")
+    print(f"theoretical best {r.theoretical_best_s:.3f} s  "
+          f"({r.lap_time_s - r.theoretical_best_s:.3f} s left on the table)")
+    print(f"session ultimate {r.ultimate_s:.3f} s  ({r.lap_time_s - r.ultimate_s:.3f} s off)"
+          f"   score {r.score:.0f}/100")
+    print(f"{'corner':>8} {'time':>7} {'own best':>12} {'lost':>7} {'session best':>20} "
+          f"{'lost':>7} {'rank':>6}")
+    for i, name in enumerate(r.names):
+        own = f"{r.own_best[i]:.3f} L{r.own_best_lap[i]}"
+        best = f"{r.field_best[i]:.3f} {r.field_best_by[i]}"
+        print(f"{name:>8} {r.lap_times[i]:>7.3f} {own:>12} {r.lap_times[i] - r.own_best[i]:>+7.3f} "
+              f"{best:>20} {r.lap_times[i] - r.field_best[i]:>+7.3f} "
+              f"{r.rank[i]:>3}/{r.drivers}")
+
+
 def _delta(args: argparse.Namespace, settings: Settings) -> None:
     cmp = compare(read_lap(args.reference), read_lap(args.other))
     corners: list[CornerComparison] = []
@@ -213,6 +254,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _delta(args, settings)
         elif args.command == "corners":
             _corners(args, settings)
+        elif args.command == "rate":
+            _rate(args, settings)
         else:
             _info(args.path)
     except (

@@ -57,3 +57,14 @@ def test_monza_corner_phases() -> None:
     assert by_name["T1-2"].reference.apex_speed < 90  # first chicane
     assert sum(c.delta_s for c in corners) == pytest.approx(cmp.final_delta_s, abs=1e-9)
     assert cmp.final_delta_s == pytest.approx(cmp.lap_time_delta_s, abs=0.003)
+
+
+def test_monza_lap_rating() -> None:
+    from f1lap.rating import rate_fastf1_lap_async
+
+    cache = Path(__file__).parents[1] / "cache"
+    r = asyncio.run(rate_fastf1_lap_async(2024, "Monza", "Q", "LEC", cache_dir=cache))
+    assert r.lap_time_s == pytest.approx(79.461, abs=1e-3)  # segment sums = official time
+    assert r.drivers == 20 and r.laps > 50
+    assert r.ultimate_s < 79.327 <= r.lap_time_s  # below pole; LEC was P3
+    assert r.theoretical_best_s <= r.lap_time_s and 0 <= r.score <= 100

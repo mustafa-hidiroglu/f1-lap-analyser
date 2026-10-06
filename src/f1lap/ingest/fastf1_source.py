@@ -52,18 +52,29 @@ def load_session(year: int, event: str | int, session: str, *, cache_dir: Path) 
 
 
 def lap_from_session(ses: Any, driver: str, lap: LapSelector = "fastest") -> LapTrace:
-    picked = _pick_lap(ses.laps, driver, lap)
-    lap_time = picked["LapTime"]
+    return lap_from_row(ses, _pick_lap(ses.laps, driver, lap))
+
+
+def session_laps(ses: Any, quick_threshold: float = 1.07) -> list[LapTrace]:
+    """Every valid lap in the session: within `quick_threshold` x the fastest lap, accurate,
+    not deleted (track limits), and not a pit in/out lap."""
+    laps = ses.laps.pick_quicklaps(quick_threshold).pick_wo_box()
+    valid = laps["IsAccurate"].eq(True) & ~laps["Deleted"].eq(True)  # missing flag -> False
+    return [lap_from_row(ses, row) for _, row in laps[valid.to_numpy()].iterlaps()]
+
+
+def lap_from_row(ses: Any, row: Any) -> LapTrace:
+    lap_time = row["LapTime"]
     meta = LapMeta(
-        driver=str(picked["Driver"]),
-        lap_number=int(picked["LapNumber"]),
+        driver=str(row["Driver"]),
+        lap_number=int(row["LapNumber"]),
         lap_time_s=None if lap_time != lap_time else float(lap_time.total_seconds()),  # NaT-safe
         source="fastf1",
         year=int(ses.event.year),
         event=str(ses.event["EventName"]),
         session=str(ses.name),
     )
-    return trace_from_frame(picked.get_telemetry(), meta)
+    return trace_from_frame(row.get_telemetry(), meta)
 
 
 def circuit_from_frame(

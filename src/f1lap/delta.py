@@ -56,15 +56,21 @@ def _same_grid(a: ResampledLap, b: ResampledLap) -> bool:
     )
 
 
-def compare(reference: ResampledLap, other: ResampledLap) -> LapComparison:
-    """Put `other` on `reference`'s grid (rescaling its distance if needed) and diff lap time.
-
-    The reference lap is never altered: its nominal length and step define the shared grid.
-    """
+def align(reference: ResampledLap, other: ResampledLap) -> ResampledLap:
+    """`other` on `reference`'s grid (distance rescaled to the reference length if needed)."""
     if not _same_grid(reference, other):
         other = rescale(other, nominal_length(reference), reference.step_m)
     if len(other) != len(reference):
         raise ValueError("laps could not be aligned onto a common grid")
+    return other
+
+
+def compare(reference: ResampledLap, other: ResampledLap) -> LapComparison:
+    """Put `other` on `reference`'s grid and diff lap time.
+
+    The reference lap is never altered: its nominal length and step define the shared grid.
+    """
+    other = align(reference, other)
     delta = other[schema.TIME] - reference[schema.TIME]
     delta.flags.writeable = False
     return LapComparison(reference, other, delta)

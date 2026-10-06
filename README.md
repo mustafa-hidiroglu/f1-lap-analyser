@@ -62,6 +62,27 @@ approach | braking | mid | exit | straight
 Phases are cut at the reference lap's boundaries, so phase deltas sum exactly to the corner
 delta, and corner deltas to the delta at the line. `--json` includes all points per corner.
 
+### Lap rating
+
+```sh
+uv run f1lap rate 2024 Monza Q LEC            # fastest lap; or --lap 17, --json rating.json
+```
+
+Rates one lap against every valid lap in the session (accurate, not deleted, no pit in/out, within
+107 % of the fastest), all cut into the same corner segments on the session's fastest lap:
+
+- **theoretical best**: the driver's best time in every segment, summed. `lap - theoretical best`
+  is the time left on the table, and the table shows which lap set each personal best.
+- **session ultimate**: the best time in every segment by anyone, and who set it.
+- **rank / percentile** per corner against every *other* driver's best in that corner.
+- **score** (0-100): the mean corner percentile. Seconds are the primary result; the score is a
+  scale-free summary for ranking laps and drivers.
+
+Segment times add up to the official lap time: the last segment is extended from the grid end to
+the finish line (checked to 0.0 ms on all 87 valid laps of 2024 Monza qualifying).
+UIs should call `await rating.rate_fastf1_lap_async(...)`, which returns a typed `LapRating`
+(`.to_dict()` for JSON).
+
 Global options (before the subcommand): `--step 0.5` grid spacing, `--length 5793` normalise lap
 length, `-o path.parquet`, `--config f1lap.toml`.
 
@@ -117,7 +138,7 @@ uv run ruff check . && uv run mypy src tests
 2. ~~Delta-time trace vs reference lap, micro-sectors~~
 3. ~~Corners: circuit model, per-corner delta, braking/mid/exit phases and key points~~
 4. Driver metrics: throttle smoothness, full-throttle time, brake onset steepness
-5. Lap rating vs the driver's theoretical best and the field
+5. ~~Lap rating vs the driver's theoretical best and the field~~
 6. Native macOS app UI: interactive traces (speed, delta, throttle/brake, gear), reports.
    The `f1lap` core stays UI-agnostic: typed results + JSON-ready summaries, async I/O.
 7. Native kernels (C++/nanobind) where profiling shows NumPy is the bottleneck
