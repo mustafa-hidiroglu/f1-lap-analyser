@@ -78,7 +78,26 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("driver")
     r.add_argument("--lap", type=_lap_selector, default="fastest", help="lap number or 'fastest'")
     r.add_argument("--json", type=Path, default=None, help="write the rating as JSON")
+
+    b = sub.add_parser("simbase", help="the perfect-lap base: build or list simulated laps")
+    bsub = b.add_subparsers(dest="simbase_command", required=True)
+    bb = bsub.add_parser("build", help="simulate every competitive session of whole seasons")
+    bb.add_argument("--years", type=_years, default=range(2018, 2027),
+                    help="season or range, e.g. 2024 or 2018-2026")
+    bb.add_argument("--session", action="append", default=None,
+                    help="only these session names (repeatable), e.g. Qualifying")
+    bb.add_argument("--base", type=Path, default=None, help="output base (default: shipped)")
+    bb.add_argument("--build-cache", type=Path, default=None,
+                    help="FastF1 cache for the build (default: <cache_dir>/simbase-build)")
+    bb.add_argument("--retry-failed", action="store_true", help="retry recorded failures")
+    bl = bsub.add_parser("list", help="list the base's entries and failures")
+    bl.add_argument("--base", type=Path, default=None)
     return p
+
+
+def _years(value: str) -> range:
+    a, _, b = value.partition("-")
+    return range(int(a), int(b or a) + 1)
 
 
 def _circuit_args(p: argparse.ArgumentParser) -> None:
@@ -227,10 +246,55 @@ def _rate(args: argparse.Namespace, settings: Settings) -> None:
         cache_dir=settings.cache_dir, step_m=step,
     )
     print_rating(rating)
+    report = None
+    try:
+        from f1lap import explain
+
+        report = explain.explain_fastf1_lap(
+            args.year, args.event, args.session, args.driver, args.lap,
+            cache_dir=settings.cache_dir, step_m=step,
+        )
+    except (ValueError, LookupError) as exc:  # SimError: no perfect lap for this session
+        print(f"\nno perfect lap: {exc}")
+    if report is not None:
+        print(f"\nperfect lap {report.sim_lap_time_s:.3f} s  (gap {report.gap_s:.3f} s; best laps "
+              f"typically {report.typical_gap_s:.3f} s)")
+        for line in report.summary:
+            print(f"  - {line}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(rating.to_dict(), indent=2))
+        data = rating.to_dict() | ({"perfect": report.to_dict()} if report else {})
+        args.json.write_text(json.dumps(data, indent=2))
         print(f"wrote {args.json}")
+
+
+def _simbase(args: argparse.Namespace, settings: Settings) -> None:
+    from f1lap import simbase
+
+    base = args.base or simbase.PACKAGE_BASE
+    if args.simbase_command == "list":
+        files = sorted(base.glob("*/*.parquet"))
+        for f in files:
+            print(f.relative_to(base))
+        fails = simbase.failures(base)
+        print(f"{len(files)} perfect laps, {len(fails)} sessions without one")
+        for key, reason in fails.items():
+            print(f"  ✕ {key}: {reason}")
+        return
+
+    import asyncio
+    import logging
+
+    from f1lap.simbase_build import build
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", stream=sys.stdout)
+    names = {n.lower() for n in args.session} if args.session else None
+    tally = asyncio.run(build(
+        args.years, base, args.build_cache or settings.cache_dir / "simbase-build",
+        retry_failed=args.retry_failed,
+        only=(lambda p: p.session.lower() in names) if names else None,
+    ))
+    print(tally)
 
 
 def print_rating(rating: LapRating) -> None:
@@ -301,6 +365,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _metrics(args, settings)
         elif args.command == "rate":
             _rate(args, settings)
+        elif args.command == "simbase":
+            _simbase(args, settings)
         else:
             _info(args.path)
     except (

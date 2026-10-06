@@ -184,6 +184,42 @@ public struct Rating: Decodable, Sendable {
     public let segments: [RatedSegment]
     public let circuit: CircuitInfo
     public let reference: LapLabel
+    /// The lap against the session's simulated perfect lap, with reasons (nil from old sidecars).
+    public let perfect: PerfectLap?
+}
+
+/// Comparison with the session's perfect (simulated) lap. When the session has none, only
+/// `error` is set.
+public struct PerfectLap: Decodable, Sendable {
+    public let error: String?
+    public let lapTimeS: Double?
+    public let simLapTimeS: Double?
+    public let gapS: Double?
+    /// Median gap of the session's best laps to the perfect lap: what "good" looks like.
+    public let typicalGapS: Double?
+    public let corners: [PerfectCorner]?
+    public let lapFindings: [Finding]?
+    public let summary: [String]?
+    public let traces: TraceFile?
+}
+
+public struct PerfectCorner: Decodable, Sendable, Identifiable {
+    public let name: String
+    public let startM: Double
+    public let endM: Double
+    public let lostS: Double
+    public let typicalLostS: Double
+    public let excessS: Double
+    public let findings: [Finding]
+    public var id: String { name }
+}
+
+public struct Finding: Decodable, Sendable, Hashable {
+    public let kind: String
+    public let text: String
+    public let corner: String?
+    /// Time attributed to this finding; nil for context (traffic, flags, tyres).
+    public let costS: Double?
 }
 
 public struct RatedSegment: Decodable, Sendable, Identifiable {

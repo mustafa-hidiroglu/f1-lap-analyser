@@ -21,7 +21,16 @@ struct RatingView: View {
             .padding(12)
             Divider()
             if let r = model.rating {
-                ScrollView { RatingReport(r: r).padding(14) }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let perfect = r.perfect {
+                            PerfectReport(p: perfect, plot: model.perfectPlot)
+                            Divider()
+                        }
+                        RatingReport(r: r)
+                    }
+                    .padding(14)
+                }
             } else {
                 Placeholder(text: model.info == nil ? "Pick an event and session" : "Press Rate")
             }
@@ -100,6 +109,112 @@ private struct RatingReport: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.title3.monospacedDigit().weight(.semibold))
+        }
+    }
+}
+
+// MARK: - vs the perfect lap
+
+private struct PerfectReport: View {
+    let p: PerfectLap
+    let plot: PerfectPlot?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("vs the perfect lap").font(.headline)
+            if let error = p.error {
+                Label("No perfect lap for this session: \(error)", systemImage: "info.circle")
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 32) {
+                    stat("Perfect lap", Fmt.lapTime(p.simLapTimeS))
+                    stat("Gap", Fmt.delta(p.gapS))
+                    stat("Best laps' gap", Fmt.delta(p.typicalGapS))
+                    stat("Left on the table", Fmt.delta(max((p.gapS ?? 0) - (p.typicalGapS ?? 0), 0)))
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array((p.summary ?? []).enumerated()), id: \.offset) { i, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: i == 0 ? "flag.checkered" : "arrow.turn.down.right")
+                                .foregroundStyle(i == 0 ? Color.primary : .secondary)
+                                .frame(width: 16)
+                            Text(line).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .textSelection(.enabled)
+                if let plot { SpeedVsPerfect(plot: plot, corners: p.corners ?? []) }
+                CornerReasons(corners: p.corners ?? [])
+            }
+        }
+    }
+
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.title3.monospacedDigit().weight(.semibold))
+        }
+    }
+}
+
+private struct SpeedVsPerfect: View {
+    let plot: PerfectPlot
+    let corners: [PerfectCorner]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Speed vs the perfect lap (km/h)").font(.caption).foregroundStyle(.secondary)
+            Chart {
+                LinePlot(plot.sim, x: .value("Distance", \.d), y: .value("Speed", \.v),
+                         series: .value("Lap", \.lap))
+                    .foregroundStyle(by: .value("Lap", "Perfect"))
+                LinePlot(plot.lap, x: .value("Distance", \.d), y: .value("Speed", \.v),
+                         series: .value("Lap", \.lap))
+                    .foregroundStyle(by: .value("Lap", "This lap"))
+                ForEach(corners.filter { $0.excessS > 0.1 }) { c in
+                    RectangleMark(xStart: .value("From", c.startM), xEnd: .value("To", c.endM))
+                        .foregroundStyle(Color.red.opacity(min(0.06 + c.excessS * 0.4, 0.3)))
+                }
+            }
+            .chartForegroundStyleScale(["Perfect": Color.green, "This lap": Palette.reference])
+            .chartXScale(domain: 0...max(plot.lengthM, 1))
+            .frame(height: 200)
+            Text("Shaded: corners where this lap lost over 0.1 s more than the session's best laps.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct CornerReasons: View {
+    let corners: [PerfectCorner]
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+            GridRow {
+                ForEach(["Corner", "Lost", "Best laps", "Excess", "Why"], id: \.self) {
+                    Text($0).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            ForEach(corners) { c in
+                GridRow(alignment: .firstTextBaseline) {
+                    Text(c.name)
+                    Text(Fmt.delta(c.lostS)).monospacedDigit()
+                    Text(Fmt.delta(c.typicalLostS)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(Fmt.delta(c.excessS)).monospacedDigit()
+                        .foregroundStyle(c.excessS > 0.05 ? .red : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(c.findings, id: \.self) { f in
+                            Text(f.text.hasPrefix("\(c.name): ")
+                                 ? String(f.text.dropFirst(c.name.count + 2)) : f.text)
+                                .foregroundStyle(f.costS == nil ? .secondary : .primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .gridColumnAlignment(.leading)
+                }
+                .font(.callout)
+            }
         }
     }
 }

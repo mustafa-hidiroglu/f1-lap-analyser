@@ -35,6 +35,7 @@ final class AppModel {
     private(set) var otherInfo: SessionInfo?
     private(set) var comparison: Comparison?
     private(set) var rating: Rating?
+    private(set) var perfectPlot: PerfectPlot?
     var tab = Tab.compare
     var ratedSide = Side.reference { didSet { if ratedSide != oldValue { rate() } } }
 
@@ -137,6 +138,7 @@ final class AppModel {
         info = nil
         comparison = nil
         rating = nil
+        perfectPlot = nil
         guard let key else { return }
         sessionTask = Task {
             await run("Loading \(key.event) \(key.session) (first load downloads telemetry)") {
@@ -213,8 +215,15 @@ final class AppModel {
         ratingTask = Task {
             await run("Rating \(lap.driver) against the \(key.year) field") {
                 let rating = try await self.service.rate(key, lap: lap)
+                var plot: PerfectPlot?
+                // The rating stands even if the perfect-lap trace file cannot be read.
+                if let perfect = rating.perfect,
+                   let traces = try? await self.service.perfectTraces(perfect) {
+                    plot = await PerfectPlot.prepare(traces)
+                }
                 guard !Task.isCancelled else { return }
                 self.rating = rating
+                self.perfectPlot = plot
             }
         }
     }

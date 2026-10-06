@@ -106,6 +106,12 @@ public struct F1LapService: Sendable {
             P(year: key.year, event: key.event, session: key.session, driver: lap.driver, lap: lap))
     }
 
+    /// The rated lap and the perfect lap on one grid (distance, delta, sim/lap speed and brake).
+    public func perfectTraces(_ perfect: PerfectLap) async throws -> Traces? {
+        guard let file = perfect.traces else { return nil }
+        return try await Self.loadTraces(file)
+    }
+
     /// Memory-maps and decodes a trace file off the caller's actor.
     @concurrent
     static func loadTraces(_ file: TraceFile) async throws -> Traces {

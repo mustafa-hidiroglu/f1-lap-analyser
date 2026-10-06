@@ -86,9 +86,13 @@ def lap_from_row(ses: Any, row: Any) -> LapTrace:
 def lap_telemetry(row: Any) -> Any:
     """`Lap.get_telemetry()` without its driver-ahead channels: the same merge of car and
     position data, sample for sample, but ~5x faster (`add_driver_ahead` scans every other car,
-    ~45 ms per lap). Rating a race resamples ~900 laps, so this is most of its run time."""
-    pos = row.get_pos_data(pad=1, pad_side="both")
+    ~45 ms per lap). Rating a race resamples ~900 laps, so this is most of its run time.
+    Without position data (no X/Y) the lap keeps its car channels only."""
     car = row.get_car_data(pad=1, pad_side="both").add_distance().add_relative_distance()
+    try:
+        pos = row.get_pos_data(pad=1, pad_side="both")
+    except KeyError:  # no position data for this car (several 2018 races): car channels only
+        return car.slice_by_lap(row, interpolate_edges=True)
     return pos.merge_channels(car).slice_by_lap(row, interpolate_edges=True)
 
 

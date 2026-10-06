@@ -83,6 +83,46 @@ the finish line (checked to 0.0 ms on all 87 valid laps of 2024 Monza qualifying
 UIs should call `await rating.rate_fastf1_lap_async(...)`, which returns a typed `LapRating`
 (`.to_dict()` for JSON).
 
+### Perfect lap and reasons
+
+`rate` also compares the lap with the session's **perfect lap**, a physics simulation, and says
+in plain sentences where and why it was slower:
+
+```
+BOT L2 was 2.904 s slower than the perfect lap; the session's best laps were typically 1.253 s
+off it, so this lap left 1.651 s on the table.
+T1-2: carried 7 km/h less through the apex than the best laps; the deficit carries onto the exit (0.41 s).
+T11: carried 19 km/h less through the apex than the best laps; the deficit carries onto the exit (0.25 s).
+Close behind VER (0.2 s) through T11 — dirty air costs front grip in the corners.
+```
+
+- **Simulation** (`sim.py`): quasi-steady-state point mass on the session's fastest lap. Corner
+  speed limit = the best speed any of the 8 fastest laps reached at each point (laps are first
+  warped onto one racing line by X/Y, since integrated distance drifts 10-30 m); braking and
+  acceleration from fitted car envelopes (downforce-dependent braking, power/drag-limited
+  acceleration), never below what a calibration lap demonstrated at that point. Latest
+  braking, full power out, iterated so the lap closes. Typically 1-4 % faster than pole.
+- **One perfect lap per session** (qualifying, sprint shootout/qualifying, sprint, race), so
+  race laps are judged against race pace. Sessions whose sim fails the sanity check (0-8 %
+  faster than the fastest lap) or have under 3 timed laps get none, with the reason.
+- **Reasons** (`explain.py`) judge the lap against the *best laps'* typical loss to the perfect
+  lap, not the perfect lap itself: braked early/late (±15 m), lift-and-coast, apex speed, slow
+  exit, slower on the way in, plus context — cars within 1 s ahead (dirty air / fight),
+  positions gained or lost, car behind at the line, yellow/SC/VSC flags, pit laps, tyre age,
+  race fuel. Each corner phase's excess time is claimed by at most one reason.
+- **Base**: `src/f1lap/simbase/<year>/<event>__<session>.parquet` (~45 KB each), prebuilt for
+  2018-2026 and shipped with the package. Sessions missing from it are simulated on demand and
+  saved to `<cache_dir>/simbase/`.
+
+```sh
+uv run f1lap simbase build --years 2018-2026      # resumable; ~4 s per session
+uv run f1lap simbase build --years 2026 --retry-failed
+uv run f1lap simbase list
+```
+
+The builder uses its own FastF1 cache, frees each session after building, waits out API rate
+limits, and leaves sessions with network errors for the next run.
+
 ### Driver metrics
 
 ```sh
@@ -158,7 +198,7 @@ sequenceDiagram
 | `schedule` | `year` | events with round, date, format, session names |
 | `session` | `year, event, session` | drivers (team, colour, position) and every lap with validity |
 | `compare` | session + `reference`/`other`: `{driver, lap?, year?, event?, session?}` (a side's own session overrides the top-level one, e.g. one driver across seasons; the reference session supplies the circuit) | delta summary, corner table, phases, metrics for both laps, circuit (corners, segments, track outline), trace file |
-| `rate` | session + `driver, lap?` | `LapRating.to_dict()` + circuit + reference lap |
+| `rate` | session + `driver, lap?` | `LapRating.to_dict()` + circuit + reference lap + `perfect` (gap, per-corner reasons, summary, trace file; `{"error"}` if the session has no perfect lap) |
 
 - Long requests send `progress` notifications (no `id`): `{"message", "done"?, "total"?}`.
 - Errors: standard JSON-RPC codes, `-32000` for analysis failures (unknown driver, missing data).

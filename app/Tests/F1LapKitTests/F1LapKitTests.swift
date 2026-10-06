@@ -37,6 +37,11 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
         #expect(r.driver == "LEC")
         #expect((0...100).contains(r.score))
         #expect(r.theoreticalBestS <= r.lapTimeS)
+        let p = try #require(r.perfect)
+        #expect(p.error == nil)
+        #expect(try #require(p.simLapTimeS) < r.lapTimeS)
+        #expect(p.summary?.first?.hasPrefix("LEC L20 was") == true)
+        #expect(p.corners?.isEmpty == false && p.traces != nil)
     }
 
     @Test func lapRefEncodesFastest() throws {

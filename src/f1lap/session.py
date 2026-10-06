@@ -15,7 +15,9 @@ from typing import Any
 
 import numpy as np
 
+from f1lap import simbase
 from f1lap.circuit import Circuit, Segment, corner_segments, detect_corners
+from f1lap.context import LapContext, lap_context
 from f1lap.ingest.fastf1_source import (
     LapSelector,
     circuit_from_session,
@@ -25,12 +27,19 @@ from f1lap.ingest.fastf1_source import (
     valid_rows,
 )
 from f1lap.resample import resample_to_distance
-from f1lap.trace import ResampledLap
+from f1lap.sim import CALIBRATION_LAPS, SimError, SimLap, simulate
+from f1lap.trace import ResampledLap, TraceError
 
 
 class LoadedSession:
-    def __init__(self, ses: Any, step_m: float = 1.0, quick_threshold: float = 1.07) -> None:
+    def __init__(
+        self, ses: Any, step_m: float = 1.0, quick_threshold: float = 1.07,
+        user_base: Path | None = None,
+    ) -> None:
         self.ses = ses
+        #: Where perfect laps simulated on demand are saved (None: simulate, don't save).
+        self.user_base = user_base
+        self._sim_error: SimError | None = None  # cached_property does not cache exceptions
         self.step_m = step_m
         self.quick_threshold = quick_threshold
         self._laps: dict[tuple[str, int], ResampledLap] = {}
@@ -41,7 +50,8 @@ class LoadedSession:
     def load(
         cls, year: int, event: str | int, session: str, *, cache_dir: Path, step_m: float = 1.0
     ) -> LoadedSession:
-        return cls(load_session(year, event, session, cache_dir=cache_dir), step_m)
+        return cls(load_session(year, event, session, cache_dir=cache_dir), step_m,
+                   user_base=cache_dir / "simbase")
 
     def lap(self, driver: str, lap: LapSelector = "fastest") -> ResampledLap:
         return self._resampled(pick_lap(self.ses.laps, driver, lap))
@@ -62,6 +72,65 @@ class LoadedSession:
                 self.progress(i, len(rows))
             laps.append(self._resampled(row))
         return laps
+
+    def calibration_laps(self, k: int = CALIBRATION_LAPS) -> list[ResampledLap]:
+        """The `k` fastest valid laps, resampling only those (a race has ~900 valid laps)."""
+        rows = valid_rows(self.ses, self.quick_threshold)
+        if rows.empty:
+            # FastF1's accuracy check can fail for a whole session ("all laps marked as
+            # inaccurate", e.g. without position data): fall back to quick non-pit laps.
+            rows = self.ses.laps.pick_quicklaps(self.quick_threshold).pick_wo_box()
+        rows = rows[rows["LapTime"].notna().to_numpy()].sort_values("LapTime")
+        laps: list[ResampledLap] = []
+        for _, row in rows.iterlaps():
+            try:  # some drivers have no car telemetry at all (seen in 2018): take the next lap
+                laps.append(self._resampled(row))
+            except (KeyError, ValueError, TraceError):
+                continue
+            if len(laps) == k:
+                break
+        return laps
+
+    @cached_property
+    def sim(self) -> SimLap:
+        """This session's perfect lap: from the shipped base, else the user base, else simulated
+        now and saved to the user base. Raises `SimError` if the session cannot produce one."""
+        if self._sim_error is not None:
+            raise self._sim_error
+        try:
+            return self._find_or_simulate()
+        except SimError as exc:
+            self._sim_error = exc
+            raise
+
+    def _find_or_simulate(self) -> SimLap:
+        key = simbase.SimKey.of_session(self.ses)
+        bases = [simbase.PACKAGE_BASE] + ([self.user_base] if self.user_base else [])
+        found = simbase.lookup(key, bases)
+        if found is not None:
+            return found
+        for base in bases:
+            reason = simbase.failures(base).get(key.label)
+            if reason:
+                raise SimError(reason)
+        calib = self.calibration_laps()
+        try:
+            if not calib:
+                raise SimError("no valid timed laps in this session",
+                               permanent=len(self.ses.laps) > 0)
+            sim = simulate(calib[0], calib)
+        except SimError as exc:
+            if self.user_base and exc.permanent:
+                simbase.record_failure(self.user_base, key, str(exc))
+            raise
+        if self.user_base:
+            # Return the stored form, so the first rating matches every later one.
+            return simbase.load(simbase.save(sim, key, self.user_base))
+        return sim
+
+    def lap_context(self, driver: str, lap: LapSelector = "fastest") -> LapContext:
+        """Traffic, flags, tyres and position fights around one lap."""
+        return lap_context(self.ses, pick_lap(self.ses.laps, driver, lap))
 
     @cached_property
     def reference(self) -> ResampledLap:

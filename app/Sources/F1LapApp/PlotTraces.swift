@@ -53,3 +53,26 @@ struct PlotTraces: Sendable {
             track: track.map { (x: $0.0, y: $0.1, d: $0.2, gain: $0.3) })
     }
 }
+
+/// The rated lap against the perfect lap, thinned for plotting.
+struct PerfectPlot: Sendable {
+    let lengthM: Double
+    let sim: [Pt]
+    let lap: [Pt]
+    let delta: [Pt]
+
+    @concurrent
+    static func prepare(_ t: Traces) async -> PerfectPlot {
+        let distance = t["distance"]
+        let n = distance.count
+        let stride = max(1, n / 1500)
+        func thin(_ column: [Double], lap: String) -> [Pt] {
+            Swift.stride(from: 0, to: min(n, column.count), by: stride).compactMap {
+                column[$0].isFinite ? Pt(d: distance[$0], v: column[$0], lap: lap) : nil
+            }
+        }
+        return PerfectPlot(
+            lengthM: distance.last ?? 0, sim: thin(t["sim.speed"], lap: "Perfect"),
+            lap: thin(t["lap.speed"], lap: "Lap"), delta: thin(t["delta"], lap: "Delta"))
+    }
+}

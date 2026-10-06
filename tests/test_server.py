@@ -16,8 +16,10 @@ from conftest import MakeLap
 
 from f1lap.binary import read_soa, write_soa
 from f1lap.circuit import Circuit, Corner, Segment, corner_segments
+from f1lap.context import LapContext
 from f1lap.resample import resample_to_distance
 from f1lap.server import INVALID_PARAMS, METHOD_NOT_FOUND, PARSE_ERROR, Server, encode
+from f1lap.sim import CarModel, SimError, SimLap
 from f1lap.trace import LapMeta, LapTrace, ResampledLap
 
 
@@ -57,6 +59,26 @@ class FakeSession:
 
     def info(self) -> dict[str, Any]:
         return {"event": "Synthetic", "drivers": [{"code": d} for d in self._laps]}
+
+    has_sim = True
+
+    @cached_property
+    def sim(self) -> SimLap:
+        """The fastest lap made 2 % quicker everywhere stands in for the simulation."""
+        if not self.has_sim:
+            raise SimError("only 1 timed laps; need 3 to calibrate")
+        ref = self.reference
+        meta = LapMeta(driver="SIM", lap_time_s=(ref.meta.lap_time_s or 0) * 0.98,
+                       raw_length_m=ref.meta.raw_length_m)
+        lap = ResampledLap({**ref.channels, "time": ref["time"] * 0.98}, ref.step_m, meta)
+        model = CarModel(15.0, 500.0, 0.0002, 30.0, 0.002, 90.0)
+        return SimLap(lap, model, (("AAA", 1, ref.meta.lap_time_s),), ref.meta.lap_time_s)
+
+    def calibration_laps(self) -> list[ResampledLap]:
+        return [self._laps["AAA"], self._laps["BBB"]]
+
+    def lap_context(self, driver: str, lap: Any = "fastest") -> LapContext:
+        return LapContext(session_kind="qualifying", compound="SOFT", tyre_life=2)
 
 
 SES: dict[str, Any] = {"year": 2024, "event": "Synthetic", "session": "Q"}
@@ -136,6 +158,18 @@ def test_rate(server: Server) -> None:
     assert res["driver"] == "BBB" and res["drivers"] == 3
     assert res["score"] == pytest.approx(50.0)  # beats CCC, loses to AAA everywhere
     assert res["reference"]["driver"] == "AAA"
+    perfect = res["perfect"]
+    assert perfect["gap_s"] > 0 and perfect["summary"][0].startswith("BBB L2 was")
+    assert [c["name"] for c in perfect["corners"]] == ["T1", "T2", "T3", "T4"]
+    cols = read_soa(Path(perfect["traces"]["path"]), perfect["traces"]["columns"])
+    assert set(cols) >= {"distance", "delta", "sim.speed", "lap.speed"}
+
+
+def test_rate_without_perfect_lap(server: Server) -> None:
+    server._sessions[(2024, "synthetic", "q")].has_sim = False  # type: ignore[attr-defined]
+    res = _rpc(server, "rate", **SES, driver="BBB")["result"]
+    assert res["score"] == pytest.approx(50.0)  # the rating itself still works
+    assert res["perfect"] == {"error": "only 1 timed laps; need 3 to calibrate"}
 
 
 def test_encode_replaces_non_finite() -> None:

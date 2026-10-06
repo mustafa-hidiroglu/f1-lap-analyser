@@ -36,11 +36,13 @@ from f1lap import schema
 from f1lap.binary import write_soa
 from f1lap.circuit import corner_segments
 from f1lap.delta import compare, corner_table, summary
+from f1lap.explain import explain_session_lap
 from f1lap.ingest.fastf1_source import LapSelector
 from f1lap.metrics import lap_metrics
 from f1lap.phases import compare_corners
 from f1lap.rating import rate_session_lap
 from f1lap.session import LoadedSession
+from f1lap.sim import SimError
 from f1lap.trace import TraceError
 
 PROTOCOL_VERSION: Final = 1
@@ -214,7 +216,9 @@ class Server:
 
     def rate(self, p: dict[str, Any]) -> dict[str, Any]:
         sd = self._session(p)
-        result = rate_session_lap(sd, _param(p, "driver", str), _lap(p)).to_dict()
+        driver, lap = _param(p, "driver", str), _lap(p)
+        result = rate_session_lap(sd, driver, lap).to_dict()
+        result["perfect"] = self._perfect(sd, driver, lap)
         result["circuit"] = self._circuit(sd, sd.reference)
         result["reference"] = {
             "driver": sd.reference.meta.driver,
@@ -229,6 +233,30 @@ class Server:
         side = _param(p, name, dict)
         sd = self._session(p | {k: side[k] for k in ("year", "event", "session") if k in side})
         return sd, sd.lap(*_lap_ref(p, name))
+
+    def _perfect(self, sd: LoadedSession, driver: str, lap: LapSelector) -> dict[str, Any]:
+        """The lap vs the session's perfect lap, with reasons; `{"error": ...}` if the session
+        has none (too few laps, unreliable telemetry)."""
+        self._progress("Comparing with the perfect lap")
+        try:
+            report = explain_session_lap(sd, driver, lap)
+        except SimError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:  # the rating itself must still be returned
+            log.exception("perfect-lap comparison failed")
+            return {"error": f"perfect-lap comparison failed: {type(exc).__name__}: {exc}"}
+        cmp = compare(sd.sim.lap, sd.lap(driver, lap))
+        out = report.to_dict()
+        out["traces"] = self._write_traces({
+            schema.DISTANCE: cmp.distance,
+            "delta": cmp.delta_s,
+            "sim.speed": cmp.reference["speed"],
+            "lap.speed": cmp.other["speed"],
+            "sim.brake": cmp.reference["brake"],
+            "lap.brake": cmp.other["brake"] if "brake" in cmp.other.channels
+            else np.zeros(len(cmp.other)),
+        })
+        return out
 
     def _progress(self, message: str, done: int | None = None, total: int | None = None) -> None:
         if self.notify is not None:

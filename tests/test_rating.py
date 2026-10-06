@@ -7,11 +7,13 @@ import numpy as np
 import pytest
 from conftest import MakeLap
 
+import f1lap.explain
 import f1lap.rating
 from f1lap.circuit import corner_segments, detect_corners
 from f1lap.cli import main
 from f1lap.rating import LapEntry, LapRating, SegmentTimes, rate, segment_times
 from f1lap.resample import resample_to_distance
+from f1lap.sim import SimError
 from f1lap.trace import LapTrace
 
 
@@ -106,9 +108,15 @@ def test_cli_rate(
         return canned
 
     monkeypatch.setattr(f1lap.rating, "rate_fastf1_lap", fake)
+
+    def no_sim(*args: object, **kwargs: object) -> None:
+        raise SimError("only 1 timed laps")
+
+    monkeypatch.setattr(f1lap.explain, "explain_fastf1_lap", no_sim)
     out = tmp_path / "r.json"
     assert main(["--config", str(tmp_path / "x.toml"), "rate", "2024", "Monza", "Q", "AAA",
                  "--json", str(out)]) == 0
     printed = capsys.readouterr().out
     assert "theoretical best 59.500 s" in printed and "score 50/100" in printed
+    assert "no perfect lap: only 1 timed laps" in printed
     assert json.loads(out.read_text())["driver"] == "AAA"
