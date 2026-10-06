@@ -1,0 +1,46 @@
+[project]
+name = "f1lap"
+version = "0.1.0"
+description = "High-performance F1 lap telemetry analyser: distance-aligned traces, deltas and corner breakdowns"
+readme = "README.md"
+authors = [
+    { name = "Mustafa Can Hidiroglu", email = "vhlp8028@leeds.ac.uk" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastf1>=3.8.3",
+    "numpy>=2.5.3",
+    "polars>=1.44.2",
+    "pyarrow>=25.0.1",
+]
+
+[project.scripts]
+f1lap = "f1lap.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.8,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -m 'not network'"
+markers = ["network: hits the live FastF1 API (run with -m network)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true

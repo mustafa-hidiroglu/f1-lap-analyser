@@ -1,0 +1,9 @@
+# Project configuration. Paths are relative to this file.
+# Env overrides: F1LAP_CACHE_DIR, F1LAP_DATA_DIR, F1LAP_STEP_M
+
+[paths]
+cache_dir = "cache"   # FastF1 HTTP/API cache
+data_dir = "data"     # processed lap traces (Parquet)
+
+[resample]
+step_m = 1.0          # uniform distance grid spacing in metres
