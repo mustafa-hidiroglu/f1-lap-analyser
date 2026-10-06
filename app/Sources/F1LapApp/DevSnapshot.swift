@@ -1,0 +1,27 @@
+import AppKit
+
+/// Development aid: `F1LAP_SNAPSHOT=/path/shot.png` writes the main window to a PNG once the
+/// model is idle with results, then quits. Draws the view hierarchy itself, so it needs no
+/// screen-recording permission (used to check layouts from scripts).
+@MainActor
+enum DevSnapshot {
+    static func scheduleIfRequested(_ model: AppModel) {
+        guard let path = ProcessInfo.processInfo.environment["F1LAP_SNAPSHOT"] else { return }
+        Task {
+            let deadline = ContinuousClock.now + .seconds(120)
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(500))
+                let done = model.tab == .compare ? model.comparison != nil : model.rating != nil
+                if model.busy == nil, done || model.error != nil { break }
+            }
+            try? await Task.sleep(for: .seconds(1))  // let charts lay out
+            if let view = NSApp.windows.first(where: \.isVisible)?.contentView,
+               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(filePath: path))
+            }
+            NSApp.terminate(nil)
+        }
+    }
+}
