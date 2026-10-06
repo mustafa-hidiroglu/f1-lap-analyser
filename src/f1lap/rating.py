@@ -17,7 +17,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -28,6 +28,9 @@ from f1lap.delta import align
 from f1lap.ingest.fastf1_source import LapSelector
 from f1lap.resample import nominal_length
 from f1lap.trace import ResampledLap
+
+if TYPE_CHECKING:
+    from f1lap.session import LoadedSession
 
 F64 = npt.NDArray[np.float64]
 
@@ -194,6 +197,20 @@ def rate(st: SegmentTimes, target: int) -> LapRating:
     )
 
 
+def rate_session_lap(
+    session: LoadedSession, driver: str, lap: LapSelector = "fastest"
+) -> LapRating:
+    """Rate one lap against every valid lap of an already loaded session (laps are memoised,
+    so rating more laps of the same session only costs the segment maths)."""
+    target = session.lap(driver, lap)
+    laps = list(session.valid_laps)
+    key = (target.meta.driver, target.meta.lap_number)
+    if key not in {(x.meta.driver, x.meta.lap_number) for x in laps}:
+        laps.append(target)  # e.g. a deleted or slow lap the session filter dropped
+    st = segment_times(laps, session.reference, session.segments)
+    return rate(st, st.index(*key))
+
+
 def rate_fastf1_lap(
     year: int,
     event: str | int,
@@ -209,29 +226,10 @@ def rate_fastf1_lap(
     Reference grid and corner segments come from the session's fastest lap and FastF1's circuit
     markers (falling back to telemetry-detected corners). Blocking — see `rate_fastf1_lap_async`.
     """
-    from f1lap.circuit import corner_segments, detect_corners
-    from f1lap.ingest.fastf1_source import (
-        circuit_from_session,
-        lap_from_session,
-        load_session,
-        session_laps,
-    )
-    from f1lap.resample import resample_to_distance
+    from f1lap.session import LoadedSession
 
-    ses = load_session(year, event, session, cache_dir=cache_dir)
-    target = resample_to_distance(lap_from_session(ses, driver, lap), step_m)
-    laps = [resample_to_distance(t, step_m) for t in session_laps(ses)]
-    key = (target.meta.driver, target.meta.lap_number)
-    if key not in {(x.meta.driver, x.meta.lap_number) for x in laps}:
-        laps.append(target)  # e.g. a deleted or slow lap the session filter dropped
-
-    reference = min(laps, key=lambda x: x.meta.lap_time_s or np.inf)
-    try:
-        circuit = circuit_from_session(ses)
-    except (LookupError, ValueError):
-        circuit = detect_corners(reference)
-    st = segment_times(laps, reference, corner_segments(circuit, reference))
-    return rate(st, st.index(*key))
+    loaded = LoadedSession.load(year, event, session, cache_dir=cache_dir, step_m=step_m)
+    return rate_session_lap(loaded, driver, lap)
 
 
 async def rate_fastf1_lap_async(

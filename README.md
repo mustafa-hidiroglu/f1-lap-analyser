@@ -134,6 +134,42 @@ straddling a transition (onset error ≤ one step). Pressure exports are stored 
 
 Discrete channels: NaN gaps are forward-filled; non-integer or out-of-range values are rejected.
 
+## macOS app sidecar
+
+The Mac app (SwiftUI, in progress) runs `f1lap-server` as a child process and talks
+JSON-RPC 2.0 over stdin/stdout, one message per line. No network port is opened.
+
+```mermaid
+sequenceDiagram
+    participant App as SwiftUI app
+    participant S as f1lap-server (asyncio)
+    participant W as worker thread
+    App->>S: {"method":"compare", ...}\n
+    S->>W: run_in_executor (FastF1 / pandas, serialised)
+    W-->>S: summary + corners + metrics
+    W->>W: write traces → ~/Library/Caches/f1lap/traces/*.f1soa
+    S-->>App: {"result": {..., "traces": {"path", "columns"}}}\n
+    App->>App: mmap .f1soa, view columns in place
+```
+
+| Method | Params | Result |
+|---|---|---|
+| `ping` | — | protocol version, cache dir |
+| `schedule` | `year` | events with round, date, format, session names |
+| `session` | `year, event, session` | drivers (team, colour, position) and every lap with validity |
+| `compare` | session + `reference`/`other`: `{driver, lap?}` | delta summary, corner table, phases, metrics for both laps, circuit (corners, segments, track outline), trace file |
+| `rate` | session + `driver, lap?` | `LapRating.to_dict()` + circuit + reference lap |
+
+- Errors: standard JSON-RPC codes, `-32000` for analysis failures (unknown driver, missing data).
+  Non-finite numbers are sent as `null`.
+- The event loop never blocks. FastF1 work runs on one worker thread, so `ping` answers while a
+  session loads. The 2 most recent sessions stay loaded, with resampled laps memoised (first
+  `rate` of a session ~5 s, then ~20 ms).
+- `.f1soa` traces: Structure-of-Arrays, each column contiguous little-endian `f64`/`i16` at an
+  8-byte-aligned offset, described by `columns: [{name, dtype, offset, count}]`. The 20 newest are
+  kept.
+- The FastF1 cache defaults to `~/Library/Caches/f1lap` (`--cache-dir` / `F1LAP_CACHE_DIR`).
+
 ## Configuration
 
 `f1lap.toml` (`[paths] cache_dir, data_dir`, `[resample] step_m`); paths are relative to the
@@ -148,6 +184,7 @@ file. Environment overrides: `F1LAP_CACHE_DIR`, `F1LAP_DATA_DIR`, `F1LAP_STEP_M`
 uv run pytest            # offline suite
 uv run pytest -m network # live FastF1 test
 uv run ruff check . && uv run mypy src tests
+app/scripts/test.sh       # Swift F1LapKit tests (live sidecar tests use .venv + cache/)
 ```
 
 ## Roadmap

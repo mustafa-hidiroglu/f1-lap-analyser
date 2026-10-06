@@ -24,7 +24,7 @@ def trace_from_frame(frame: pd.DataFrame, meta: LapMeta) -> LapTrace:
     return trace_from_columns({str(c): frame[c].to_numpy() for c in frame.columns}, meta)
 
 
-def _pick_lap(laps: Any, driver: str, lap: LapSelector) -> Any:
+def pick_lap(laps: Any, driver: str, lap: LapSelector) -> Any:
     driver_laps = laps.pick_drivers(driver)
     if driver_laps.empty:
         raise LookupError(f"no laps for driver {driver!r}")
@@ -52,15 +52,21 @@ def load_session(year: int, event: str | int, session: str, *, cache_dir: Path) 
 
 
 def lap_from_session(ses: Any, driver: str, lap: LapSelector = "fastest") -> LapTrace:
-    return lap_from_row(ses, _pick_lap(ses.laps, driver, lap))
+    return lap_from_row(ses, pick_lap(ses.laps, driver, lap))
 
 
 def session_laps(ses: Any, quick_threshold: float = 1.07) -> list[LapTrace]:
     """Every valid lap in the session: within `quick_threshold` x the fastest lap, accurate,
     not deleted (track limits), and not a pit in/out lap."""
+    return [lap_from_row(ses, row) for _, row in valid_rows(ses, quick_threshold).iterlaps()]
+
+
+def valid_rows(ses: Any, quick_threshold: float = 1.07) -> Any:
+    """Session laps that are accurate, not deleted, not pit in/out, and within
+    `quick_threshold` x the fastest lap."""
     laps = ses.laps.pick_quicklaps(quick_threshold).pick_wo_box()
     valid = laps["IsAccurate"].eq(True) & ~laps["Deleted"].eq(True)  # missing flag -> False
-    return [lap_from_row(ses, row) for _, row in laps[valid.to_numpy()].iterlaps()]
+    return laps[valid.to_numpy()]
 
 
 def lap_from_row(ses: Any, row: Any) -> LapTrace:

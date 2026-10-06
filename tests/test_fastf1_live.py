@@ -82,3 +82,19 @@ def test_monza_driver_metrics() -> None:
     assert m.brake_source == "on/off"
     t1 = next(c for c in m.corners if c.name == "T1-2")
     assert t1.peak_decel_g is not None and 4.0 < t1.peak_decel_g < 6.0  # from ~350 km/h
+
+
+def test_server_compare_and_rate(tmp_path: Path) -> None:
+    from f1lap.binary import read_soa
+    from f1lap.server import Server
+
+    server = Server(Path(__file__).parents[1] / "cache")
+    ses = {"year": 2024, "event": "Monza", "session": "Q"}
+    cmp = asyncio.run(server.call("compare", {**ses, "reference": {"driver": "LEC"},
+                                              "other": {"driver": "SAI"}}))
+    assert cmp["final_delta_s"] == pytest.approx(0.006, abs=1e-3)
+    cols = read_soa(Path(cmp["traces"]["path"]), cmp["traces"]["columns"])
+    assert cols["ref.speed"].max() > 340
+    rating = asyncio.run(server.call("rate", {**ses, "driver": "LEC"}))
+    assert rating["lap_time_s"] == pytest.approx(79.461, abs=1e-3)
+    server.close()

@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 f1lap = "f1lap.cli:main"
+f1lap-server = "f1lap.server:main"
 
 [build-system]
 requires = ["uv_build>=0.9.8,<0.10.0"]

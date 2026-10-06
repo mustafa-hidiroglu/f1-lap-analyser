@@ -9,3 +9,7 @@ __pycache__/
 /data/
 .omc/
 .DS_Store
+
+# Swift build output
+/app/.build/
+/app/.swiftpm/
