@@ -39,3 +39,21 @@ def test_monza_circuit_from_fastf1() -> None:
     # not apexes: Parabolica's (T11) sits 52 m after the lap's slowest point.
     for c in detect_corners(lap).corners:
         assert np.abs(pos - c.distance_m).min() < 60.0
+
+
+def test_monza_corner_phases() -> None:
+    from f1lap.circuit import corner_segments
+    from f1lap.delta import compare
+    from f1lap.ingest.fastf1_source import circuit_from_session, lap_from_session, load_session
+    from f1lap.phases import compare_corners
+
+    ses = load_session(2024, "Monza", "Q", cache_dir=Path(__file__).parents[1] / "cache")
+    ref = resample_to_distance(lap_from_session(ses, "LEC"), 1.0)
+    oth = resample_to_distance(lap_from_session(ses, "SAI"), 1.0)
+    cmp = compare(ref, oth)
+    corners = compare_corners(cmp, corner_segments(circuit_from_session(ses), ref))
+    by_name = {c.segment.name: c for c in corners}
+    assert by_name["T3"].reference.flat  # Curva Grande is flat out
+    assert by_name["T1-2"].reference.apex_speed < 90  # first chicane
+    assert sum(c.delta_s for c in corners) == pytest.approx(cmp.final_delta_s, abs=1e-9)
+    assert cmp.final_delta_s == pytest.approx(cmp.lap_time_delta_s, abs=0.003)

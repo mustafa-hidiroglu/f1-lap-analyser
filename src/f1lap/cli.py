@@ -15,6 +15,7 @@ from f1lap import schema
 from f1lap.circuit import Circuit, circuit_filename, corner_segments, detect_corners
 from f1lap.config import ConfigError, Settings, load_settings
 from f1lap.delta import compare, corner_table, micro_sectors, summary
+from f1lap.phases import CornerComparison, compare_corners
 from f1lap.resample import resample_to_distance
 from f1lap.store import lap_filename, read_lap, write_lap
 from f1lap.trace import LapMeta, LapTrace, ResampledLap, TraceError
@@ -146,14 +147,38 @@ def _corners(args: argparse.Namespace, settings: Settings) -> None:
         print(f"wrote {circuit.save(args.json)}")
 
 
+def _print_phases(corners: list[CornerComparison]) -> None:
+    print("\nphases (s, other - reference)       |  other vs reference")
+    print(f"{'corner':>8} {'braking':>8} {'mid':>7} {'exit':>7} | {'brake pt':>9} {'min v':>6} "
+          f"{'pickup':>7} {'full thr':>8} {'brakes':>6}")
+    for c in corners:
+        r, o = c.reference, c.other
+        if r.flat:
+            print(f"{c.segment.name:>8} {'flat':>8}")
+            continue
+        _, braking, mid, exit_, _ = c.phase_delta_s
+        brake = ("-" if r.brake_on_m is None or o.brake_on_m is None
+                 else f"{o.brake_on_m - r.brake_on_m:+.0f} m")
+        print(f"{c.segment.name:>8} {braking:>+8.3f} {mid:>+7.3f} {exit_:>+7.3f} | {brake:>9} "
+              f"{o.apex_speed - r.apex_speed:>+6.1f} {o.pickup_m - r.pickup_m:>+5.0f} m "
+              f"{o.full_throttle_m - r.full_throttle_m:>+6.0f} m "
+              f"{r.brake_applications:>3}/{o.brake_applications}")
+    print("(brake pt / pickup / full thr: + = later; min v: + = faster; brakes: ref/other count)")
+
+
 def _delta(args: argparse.Namespace, settings: Settings) -> None:
     cmp = compare(read_lap(args.reference), read_lap(args.other))
+    corners: list[CornerComparison] = []
     if args.sectors is not None:
         sectors = micro_sectors(cmp, args.sectors)
     else:
         circuit = _circuit_for(cmp.reference, args, settings)
-        sectors = corner_table(cmp, corner_segments(circuit, cmp.reference))
+        segments = corner_segments(circuit, cmp.reference)
+        sectors = corner_table(cmp, segments)
+        corners = compare_corners(cmp, segments)
     report = summary(cmp, sectors)
+    if corners:
+        report["corners"] = [c.to_dict() for c in corners]
 
     print(f"reference {_who(cmp.reference.meta)}   vs   {_who(cmp.other.meta)}")
     official = report["lap_time_delta_s"]
@@ -166,6 +191,8 @@ def _delta(args: argparse.Namespace, settings: Settings) -> None:
               f"{row['ref_time_s']:>7.3f} "
               f"{row['other_time_s']:>7.3f} {row['delta_s']:>+7.3f} "
               f"{row['ref_min_speed']:>8.1f} {row['other_min_speed']:>8.1f}")
+    if corners:
+        _print_phases(corners)
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, indent=2))
