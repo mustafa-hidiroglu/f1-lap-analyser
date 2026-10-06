@@ -13,3 +13,4 @@ __pycache__/
 # Swift build output
 /app/.build/
 /app/.swiftpm/
+/app/build/

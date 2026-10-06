@@ -136,7 +136,7 @@ Discrete channels: NaN gaps are forward-filled; non-integer or out-of-range valu
 
 ## macOS app sidecar
 
-The Mac app (SwiftUI, in progress) runs `f1lap-server` as a child process and talks
+The Mac app (SwiftUI, `app/`) runs `f1lap-server` as a child process and talks
 JSON-RPC 2.0 over stdin/stdout, one message per line. No network port is opened.
 
 ```mermaid
@@ -185,7 +185,11 @@ uv run pytest            # offline suite
 uv run pytest -m network # live FastF1 test
 uv run ruff check . && uv run mypy src tests
 app/scripts/test.sh       # Swift F1LapKit tests (live sidecar tests use .venv + cache/)
+app/scripts/bundle.sh     # release build → app/build/F1Lap.app (runs this checkout's .venv)
 ```
+
+Dev shortcuts for the app: `F1LAP_OPEN=2024/Monza/Qualifying/LEC/SAI[/rating]` opens a session
+and compares; `F1LAP_SNAPSHOT=shot.png` writes the window to a PNG once results load, then quits.
 
 ## Roadmap
 
@@ -194,6 +198,5 @@ app/scripts/test.sh       # Swift F1LapKit tests (live sidecar tests use .venv +
 3. ~~Corners: circuit model, per-corner delta, braking/mid/exit phases and key points~~
 4. ~~Driver metrics: throttle smoothness, full-throttle time, braking steepness~~
 5. ~~Lap rating vs the driver's theoretical best and the field~~
-6. Native macOS app UI: interactive traces (speed, delta, throttle/brake, gear), reports.
-   The `f1lap` core stays UI-agnostic: typed results + JSON-ready summaries, async I/O.
+6. ~~Native macOS app UI: interactive traces (speed, delta, throttle/brake, gear), reports~~
 7. Native kernels (C++/nanobind) where profiling shows NumPy is the bottleneck

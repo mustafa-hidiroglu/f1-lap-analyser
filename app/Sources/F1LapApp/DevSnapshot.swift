@@ -17,6 +17,15 @@ enum DevSnapshot {
             try? await Task.sleep(for: .seconds(1))  // let charts lay out
             if let view = NSApp.windows.first(where: \.isVisible)?.contentView,
                let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                // cacheDisplay skips the window background: paint it first, in the window's
+                // appearance, or dark-mode text lands on a transparent (white) canvas.
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+                view.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    NSColor.windowBackgroundColor.setFill()
+                    NSRect(origin: .zero, size: rep.size).fill()
+                }
+                NSGraphicsContext.restoreGraphicsState()
                 view.cacheDisplay(in: view.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?
                     .write(to: URL(filePath: path))
