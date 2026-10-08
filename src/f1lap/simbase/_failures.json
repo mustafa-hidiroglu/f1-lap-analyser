@@ -1,0 +1,34 @@
+{
+ "2018 Bahrain Grand Prix Race": {
+  "reason": "no valid timed laps",
+  "version": 2
+ },
+ "2020 Austrian Grand Prix Race": {
+  "reason": "implausible sim lap 52.610 s vs fastest 67.475 s (+22.0% gain); telemetry or calibration is unreliable",
+  "version": 2
+ },
+ "2021 Belgian Grand Prix Race": {
+  "reason": "no valid timed laps",
+  "version": 2
+ },
+ "2022 Saudi Arabian Grand Prix Qualifying": {
+  "reason": "no valid timed laps",
+  "version": 2
+ },
+ "2026 Bahrain Grand Prix Race": {
+  "reason": "implausible sim lap 88.618 s vs fastest 98.220 s (+9.8% gain); telemetry or calibration is unreliable",
+  "version": 2
+ },
+ "2026 Hungarian Grand Prix Race": {
+  "reason": "implausible sim lap 48.793 s vs fastest 82.000 s (+40.5% gain); telemetry or calibration is unreliable",
+  "version": 2
+ },
+ "2026 Japanese Grand Prix Qualifying": {
+  "reason": "implausible sim lap 73.130 s vs fastest 88.778 s (+17.6% gain); telemetry or calibration is unreliable",
+  "version": 2
+ },
+ "2026 Monaco Grand Prix Race": {
+  "reason": "implausible sim lap 59.175 s vs fastest 75.716 s (+21.8% gain); telemetry or calibration is unreliable",
+  "version": 2
+ }
+}
