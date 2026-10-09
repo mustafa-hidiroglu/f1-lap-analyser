@@ -24,7 +24,9 @@ struct RatingView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         if let perfect = r.perfect {
-                            PerfectReport(p: perfect, plot: model.perfectPlot)
+                            PerfectReport(p: perfect, plot: model.perfectPlot,
+                                          rotationDeg: r.circuit.rotationDeg,
+                                          driver: r.driver + (r.lapNumber.map { " L\($0)" } ?? ""))
                             Divider()
                         }
                         RatingReport(r: r)
@@ -118,6 +120,9 @@ private struct RatingReport: View {
 private struct PerfectReport: View {
     let p: PerfectLap
     let plot: PerfectPlot?
+    let rotationDeg: Double
+    /// The rated lap's label, e.g. "LEC L12".
+    let driver: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -143,6 +148,12 @@ private struct PerfectReport: View {
                     }
                 }
                 .textSelection(.enabled)
+                if let plot, let replay = plot.replay {
+                    GhostReplayView(replay: replay, outline: plot.outline,
+                                    rotationDeg: rotationDeg, driver: driver,
+                                    lapTimeS: p.lapTimeS, simLapTimeS: p.simLapTimeS, gapS: p.gapS)
+                        .id(p.traces?.path)  // fresh playback state per rating
+                }
                 if let plot { SpeedVsPerfect(plot: plot, corners: p.corners ?? []) }
                 CornerReasons(corners: p.corners ?? [])
             }

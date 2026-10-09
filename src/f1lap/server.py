@@ -247,15 +247,30 @@ class Server:
             return {"error": f"perfect-lap comparison failed: {type(exc).__name__}: {exc}"}
         cmp = compare(sd.sim.lap, sd.lap(driver, lap))
         out = report.to_dict()
-        out["traces"] = self._write_traces({
+        columns = {
             schema.DISTANCE: cmp.distance,
             "delta": cmp.delta_s,
+            "sim.time": cmp.reference[schema.TIME],
+            "lap.time": cmp.other[schema.TIME],
             "sim.speed": cmp.reference["speed"],
             "lap.speed": cmp.other["speed"],
             "sim.brake": cmp.reference["brake"],
+            # Missing, not zero: a zero brake would read as never braking (the replay then
+            # places the braking points on deceleration), a zero throttle as a lift all lap.
             "lap.brake": cmp.other["brake"] if "brake" in cmp.other.channels
-            else np.zeros(len(cmp.other)),
-        })
+            else np.full(len(cmp.other), np.nan),
+            "sim.throttle": cmp.reference["throttle"],
+            "lap.throttle": cmp.other["throttle"] if "throttle" in cmp.other.channels
+            else np.full(len(cmp.other), np.nan),
+        }
+        # One racing line for the replay: the driver's own, else the perfect lap's. Patchy GPS
+        # (under 95 % finite) would draw straight chords, so it falls through.
+        for line in (cmp.other, cmp.reference):
+            if "x" in line.channels and "y" in line.channels and min(
+                    np.isfinite(line["x"]).mean(), np.isfinite(line["y"]).mean()) >= 0.95:
+                columns |= {"x": line["x"], "y": line["y"]}
+                break
+        out["traces"] = self._write_traces(columns)
         return out
 
     def _progress(self, message: str, done: int | None = None, total: int | None = None) -> None:

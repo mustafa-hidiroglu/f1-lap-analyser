@@ -22,6 +22,31 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
         #expect(info.laps(of: "LEC").contains { $0.valid && $0.personalBest })
     }
 
+    @Test func sessionFastestLap() throws {
+        let info: SessionInfo = try fixture("session")
+        let best = try #require(info.fastestLap())
+        #expect(best.driver == "NOR" && best.lap == 11 && best.timeS == 79.327)
+        // Only valid laps count, even when an invalid one is faster.
+        func row(_ driver: String, _ time: Double?, valid: Bool) -> LapRow {
+            LapRow(driver: driver, lap: 1, timeS: time, compound: nil, personalBest: false,
+                   valid: valid)
+        }
+        func session(_ laps: [LapRow]) -> SessionInfo {
+            SessionInfo(year: 2024, event: "X", session: "R", drivers: [], laps: laps)
+        }
+        let mixed = session([
+            row("AAA", 80, valid: false), row("BBB", 81, valid: true), row("CCC", nil, valid: true),
+        ])
+        #expect(mixed.fastestLap()?.driver == "BBB")
+        // No valid lap: nothing stands in.
+        #expect(session([row("AAA", 82, valid: false), row("BBB", 81, valid: false),
+                         row("CCC", nil, valid: false)]).fastestLap() == nil)
+        // Equal times: the first in array order wins.
+        #expect(session([row("AAA", 81, valid: true), row("BBB", 81, valid: true)])
+            .fastestLap()?.driver == "AAA")
+        #expect(session([]).fastestLap() == nil)
+    }
+
     @Test func compare() throws {
         let c: CompareResult = try fixture("compare")
         #expect(c.reference.driver == "LEC" && c.other.driver == "SAI")
@@ -148,6 +173,256 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
             if case SidecarError.launchFailed = error { return true }
             return false
         }
+    }
+}
+
+// MARK: - Ghost replay (synthetic lap: perfect car 50 m/s, rated car 40 m/s, straight line)
+
+@Suite struct GhostReplayTests {
+    private static let grid = Array(stride(from: 0.0, through: 1000.0, by: 10.0))
+
+    private func columns(_ d: [Double] = grid) -> [String: [Double]] {
+        ["distance": d, "sim.time": d.map { $0 / 50 }, "lap.time": d.map { $0 / 40 },
+         "x": d, "y": d.map { _ in 0 }]
+    }
+
+    private func ghost(_ c: [String: [Double]]? = nil) throws -> GhostReplay {
+        try #require(GhostReplay(Traces(columns: c ?? columns())))
+    }
+
+    private func close(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
+
+    @Test func nilWithoutReplayColumns() {
+        var noX = columns()
+        noX["x"] = nil
+        #expect(GhostReplay(Traces(columns: noX)) == nil)
+        var short = columns()
+        short["y"] = Array(short["y"]!.dropLast())
+        #expect(GhostReplay(Traces(columns: short)) == nil)
+        #expect(GhostReplay(Traces(columns: [:])) == nil)
+    }
+
+    @Test func dropsNonFiniteAndStalledRows() throws {
+        var c = columns()
+        for k in c.keys { c[k]!.insert(c[k]![51], at: 52) }  // duplicate row: clocks do not advance
+        for k in c.keys { c[k]!.insert(c[k]![30], at: 31) }  // another stalled row
+        for k in c.keys { c[k]!.insert(k == "x" ? .nan : c[k]![20], at: 21) }  // missing x
+        let g = try ghost(c)
+        #expect(g.distance == Self.grid)
+        #expect(g.x == Self.grid)
+    }
+
+    @Test func durations() throws {
+        let g = try ghost()
+        #expect(close(g.durationS, 25))
+        #expect(close(g.simLapTimeS, 20))
+        #expect(close(g.lapTimeS, 25))
+        #expect(close(g.unitsPerMetre, 1))
+    }
+
+    @Test func startFrame() throws {
+        let f = try ghost().frame(at: 0)
+        #expect(f.sim.distanceM == 0 && f.lap.distanceM == 0)
+        #expect(close(f.gapS, 0))
+        #expect(!f.sim.finished && !f.lap.finished)
+    }
+
+    @Test func midFrame() throws {
+        let f = try ghost().frame(at: 10)
+        #expect(close(f.sim.distanceM, 500) && close(f.sim.x, 500) && f.sim.y == 0)
+        #expect(close(f.lap.distanceM, 400) && close(f.lap.x, 400))
+        #expect(close(f.gapS, 2))
+        #expect(!f.sim.finished && !f.lap.finished)
+    }
+
+    @Test func perfectCarFinishesFirst() throws {
+        let f = try ghost().frame(at: 20)
+        #expect(close(f.sim.distanceM, 1000) && f.sim.finished)
+        #expect(close(f.lap.distanceM, 800) && !f.lap.finished)
+        #expect(close(f.gapS, 4))
+    }
+
+    @Test func pastTheEnd() throws {
+        let f = try ghost().frame(at: 30)
+        #expect(close(f.sim.distanceM, 1000) && f.sim.finished)
+        #expect(close(f.lap.distanceM, 1000) && f.lap.finished)
+        #expect(close(f.gapS, 5))
+    }
+
+    @Test func interpolatesAndClamps() throws {
+        let g = try ghost()
+        let f = g.frame(at: 10.1)
+        #expect(close(f.lap.distanceM, 404) && close(f.lap.x, 404))
+        #expect(close(f.sim.distanceM, 505))
+        let before = g.frame(at: -3)
+        #expect(before.sim.distanceM == 0 && before.lap.distanceM == 0)
+        #expect(close(before.gapS, 0) && !before.sim.finished)
+    }
+
+    /// Speed (m/s) on a 1 m grid to 1000 m: 80 m/s, easing off at 0.2 g from `drift`, 4 g from
+    /// `brake` down to 30 m/s (the apex), then 1 g back up to 80.
+    private static func profile(drift: Double, brake: Double) -> (v: [Double], apexM: Double) {
+        let g = 9.81
+        var v = [80.0], apexM = 0.0, slowed = false
+        for s in 1...1000 {
+            let d = Double(s - 1), was = v[s - 1]
+            let a = slowed ? (was < 80 ? g : 0) : d >= brake ? -4 * g : d >= drift ? -0.2 * g : 0
+            var next = max(was * was + 2 * a, 0).squareRoot()
+            if !slowed, next <= 30 { (next, slowed, apexM) = (30, true, Double(s)) }
+            v.append(min(next, 80))
+        }
+        return (v, apexM)
+    }
+
+    /// Elapsed time on the 1 m grid at speeds `v` (m/s).
+    private static func times(_ v: [Double]) -> [Double] {
+        var t = [0.0]
+        for i in 1..<v.count { t.append(t[i - 1] + 2 / (v[i] + v[i - 1])) }
+        return t
+    }
+
+    /// Perfect car like the real base: no brake at all, its "throttle" at 50 from where it
+    /// starts losing speed (a 0.2 g drift from 300 m) to the apex; the real slowdown is 4 g from
+    /// 360 m. Rated car: brakes at 4 g from 340 m, part throttle from its apex for 30 m with a
+    /// 5 m blip of full throttle, then flat out.
+    private func corner() -> (c: [String: [Double]], simT: [Double], lapT: [Double],
+                              simApexM: Double, lapApexM: Double) {
+        let d = (0...1000).map(Double.init)
+        let (sv, sa) = Self.profile(drift: 300, brake: 360)
+        let (lv, la) = Self.profile(drift: 340, brake: 340)
+        let simT = Self.times(sv), lapT = Self.times(lv)
+        let c: [String: [Double]] = [
+            "distance": d, "sim.time": simT, "lap.time": lapT, "x": d, "y": d.map { _ in 0 },
+            "sim.speed": sv.map { $0 * 3.6 }, "lap.speed": lv.map { $0 * 3.6 },
+            "sim.brake": d.map { _ in 0 },
+            "sim.throttle": d.map { (300..<sa).contains($0) ? 50 : 100 },
+            "lap.brake": d.map { (340..<la).contains($0) ? 1 : 0 },
+            "lap.throttle": d.map {
+                (340..<la).contains($0) ? 0
+                    : (la..<la + 30).contains($0) && !(la + 10..<la + 15).contains($0) ? 40 : 100
+            },
+        ]
+        return (c, simT, lapT, sa, la)
+    }
+
+    @Test func withoutSpeedOrPedals() throws {
+        let g = try ghost()
+        let f = g.frame(at: 10)
+        #expect(f.sim.speedKmh == nil && f.sim.phase == nil)
+        #expect(f.lap.speedKmh == nil && f.lap.phase == nil)
+        #expect(g.sim.braking.isEmpty && g.sim.apex.isEmpty && g.lap.fullThrottle.isEmpty)
+        // No rated-car throttle column, a wrong-length perfect-car one: the perfect car's phase
+        // and both cars' markers come from speed; the rated car has no phase or pedal marker.
+        var (c, simT, _, _, _) = corner()
+        c["lap.throttle"] = nil
+        c["sim.throttle"] = Array(c["sim.throttle"]!.dropLast())
+        let h = try ghost(c)
+        let at = h.frame(at: simT[400])
+        #expect(at.sim.phase == .braking && at.lap.phase == nil && at.sim.speedKmh != nil)
+        #expect(h.sim.throttle == nil && h.lap.brake != nil)
+        #expect(h.lap.braking.count == 1 && h.sim.braking.count == 1 && h.lap.fullThrottle.isEmpty)
+    }
+
+    @Test func brakingPointIsTheRealDecelerationNotTheDrift() throws {
+        let (c, _, _, simApex, lapApex) = corner()
+        let g = try ghost(c)
+        // Smoothing (σ 4 m) lets the 0.5 g threshold lead the 4 g onset by a few metres.
+        #expect(g.sim.braking.count == 1 && (352...360).contains(g.sim.braking[0].distanceM))
+        // The rated car's braking point is its pedal.
+        #expect(g.lap.braking.map(\.distanceM) == [340])
+        #expect(g.sim.apex.count == 1 && abs(g.sim.apex[0].distanceM - simApex) <= 3)
+        #expect(g.lap.apex.count == 1 && abs(g.lap.apex[0].distanceM - lapApex) <= 3)
+        // Only the rated car has a pedal marker, and the 5 m blip after its apex is not it.
+        #expect(g.sim.fullThrottle.isEmpty)
+        #expect(g.lap.fullThrottle.map(\.distanceM) == [lapApex + 30])
+    }
+
+    @Test func ratedBrakingPointIsThePedalNotTheLift() throws {
+        var (c, _, _, _, lapApex) = corner()
+        // Decelerating from ~336 m (lifting) but on the brake only from 370 m.
+        c["lap.brake"] = c["distance"]!.map { (370..<lapApex).contains($0) ? 1 : 0 }
+        #expect(try ghost(c).lap.braking.map(\.distanceM) == [370])
+        // A pedal more than `pedalLeadM` before the zone is another event: no braking point.
+        c["lap.brake"] = c["distance"]!.map { (200..<250).contains($0) ? 1 : 0 }
+        #expect(try ghost(c).lap.braking.isEmpty)
+    }
+
+    @Test func ratedBrakingPointWithoutBrakeDataIsTheDeceleration() throws {
+        var (c, _, _, _, _) = corner()
+        c["lap.brake"] = c["lap.brake"]!.map { _ in .nan }
+        let g = try ghost(c)
+        #expect(g.lap.braking.count == 1 && (332...340).contains(g.lap.braking[0].distanceM))
+        c["lap.brake"] = nil
+        #expect(try ghost(c).lap.braking.map(\.distanceM) == g.lap.braking.map(\.distanceM))
+    }
+
+    /// Shared fixture: tests/test_phases.py::test_decel_zones_match_the_app asserts the same
+    /// starts. 80 m/s on a 1 m grid to 600 m: 2 g already under way at 0 m (dropped), a 1 g lift
+    /// over 200-215 m shedding ~7 km/h (dropped before merging, so it cannot pull the next start
+    /// to 200 m), 4 g over 228-268 m, 2 g over 450-470 m.
+    @Test func decelZonesMatchPython() throws {
+        let g = 9.81
+        func accel(_ m: Int) -> Double {
+            m < 30 ? -2 * g : (200..<215).contains(m) ? -g : (228..<268).contains(m) ? -4 * g
+                : (450..<470).contains(m) ? -2 * g : 0
+        }
+        var v = [80.0]
+        for s in 1...600 { v.append(max(v[s - 1] * v[s - 1] + 2 * accel(s - 1), 0).squareRoot()) }
+        let d = (0...600).map(Double.init), t = Self.times(v)
+        let r = try ghost(["distance": d, "sim.time": t, "lap.time": t, "x": d,
+                           "y": d.map { _ in 0 }, "sim.speed": v.map { $0 * 3.6 }])
+        #expect(r.sim.braking.map(\.distanceM) == [224, 448])
+    }
+
+    @Test func brakingPointSurvivesMissingSpeedAtItsStart() throws {
+        var (c, _, _, _, _) = corner()
+        for i in 348...358 { c["sim.speed"]![i] = .nan }
+        let g = try ghost(c)
+        #expect(g.sim.braking.count == 1 && (345...362).contains(g.sim.braking[0].distanceM))
+    }
+
+    @Test func phases() throws {
+        let (c, simT, lapT, _, lapApex) = corner()
+        let g = try ghost(c)
+        func sim(_ m: Int) -> GhostReplay.Phase? { g.frame(at: simT[m]).sim.phase }
+        func lap(_ m: Int) -> GhostReplay.Phase? { g.frame(at: lapT[m]).lap.phase }
+        // The perfect car's phase is its speed: the 0.2 g drift is not braking.
+        #expect(sim(100) == .steady && sim(330) == .steady && sim(400) == .braking)
+        #expect(sim(600) == .accelerating && sim(900) == .steady)
+        let a = Int(lapApex)
+        #expect(lap(100) == .fullThrottle && lap(380) == .braking && lap(a + 5) == .partial)
+        #expect(lap(800) == .fullThrottle)
+        #expect(close(g.frame(at: simT[100]).sim.speedKmh!, 288))
+    }
+
+    @Test func missingThrottleHasNoPhase() throws {
+        var (c, simT, lapT, _, _) = corner()
+        c["lap.throttle"] = c["lap.throttle"]!.map { _ in .nan }  // what the sidecar writes
+        let g = try ghost(c)
+        #expect(g.frame(at: lapT[380]).lap.phase == nil && g.frame(at: lapT[800]).lap.phase == nil)
+        #expect(g.lap.fullThrottle.isEmpty && g.lap.braking.count == 1)
+        #expect(g.frame(at: simT[400]).sim.phase == .braking)
+    }
+
+    @Test func runsFilterBeforeMerging() {
+        let d = (0..<100).map(Double.init)
+        let on = d.indices.map { (20...24).contains($0) || (30...60).contains($0) }
+        // Merged, the short run would pull the zone's start to 20 m.
+        #expect(GhostReplay.runs(on, d).map(\.start) == [20])
+        let runs = GhostReplay.runs(on, d) { $0.start != 20 }
+        #expect(runs.map(\.start) == [30] && runs.map(\.end) == [60])
+    }
+
+    @Test func runsAreDebounced() {
+        let d = (0..<200).map(Double.init)  // 1 m grid
+        let on = d.indices.map { i in
+            i <= 5  // already off at the start: no run
+                || (20...49).contains(i) || (55...70).contains(i)  // 5 m back on: one run
+                || (100...104).contains(i)  // 5 m blip
+                || i >= 150  // to the end of the lap
+        }
+        let runs = GhostReplay.runs(on, d)
+        #expect(runs.map(\.start) == [20, 150] && runs.map(\.end) == [70, 199])
     }
 }
 

@@ -162,7 +162,43 @@ def test_rate(server: Server) -> None:
     assert perfect["gap_s"] > 0 and perfect["summary"][0].startswith("BBB L2 was")
     assert [c["name"] for c in perfect["corners"]] == ["T1", "T2", "T3", "T4"]
     cols = read_soa(Path(perfect["traces"]["path"]), perfect["traces"]["columns"])
-    assert set(cols) >= {"distance", "delta", "sim.speed", "lap.speed"}
+    assert set(cols) >= {"distance", "delta", "sim.speed", "lap.speed", "sim.time", "lap.time",
+                         "sim.brake", "lap.brake", "sim.throttle", "lap.throttle", "x", "y"}
+    # Pedals drive the replay's braking / lifting / full-throttle markers.
+    sim = server._sessions[(2024, "synthetic", "q")].sim.lap
+    np.testing.assert_allclose(cols["sim.throttle"], sim["throttle"][:cols["distance"].size])
+    assert np.all((cols["lap.throttle"] >= 0) & (cols["lap.throttle"] <= 100))
+    # Elapsed time drives the ghost replay: both laps start at 0, and the delta is their gap.
+    assert cols["sim.time"][0] == pytest.approx(0) and cols["lap.time"][0] == pytest.approx(0)
+    assert np.all(np.diff(cols["lap.time"]) > 0)
+    assert np.allclose(cols["lap.time"] - cols["sim.time"], cols["delta"])
+
+
+def test_rate_replay_line_falls_back_to_perfect_lap(server: Server) -> None:
+    session: Any = server._sessions[(2024, "synthetic", "q")]
+    bbb = session._laps["BBB"]
+    x = bbb["x"].copy()
+    x[::10] = np.nan  # 90 % finite: too patchy to draw
+    session._laps["BBB"] = ResampledLap({**bbb.channels, "x": x}, bbb.step_m, bbb.meta)
+    perfect = _rpc(server, "rate", **SES, driver="BBB")["result"]["perfect"]
+    cols = read_soa(Path(perfect["traces"]["path"]), perfect["traces"]["columns"])
+    sim = session.sim.lap
+    n = cols["x"].size
+    assert np.all(np.isfinite(cols["x"])) and np.all(np.isfinite(cols["y"]))
+    np.testing.assert_allclose(cols["x"], sim["x"][:n])
+    np.testing.assert_allclose(cols["y"], sim["y"][:n])
+
+
+def test_rate_lap_without_pedals_writes_nan(server: Server) -> None:
+    session: Any = server._sessions[(2024, "synthetic", "q")]
+    bbb = session._laps["BBB"]
+    channels = {k: v for k, v in bbb.channels.items() if k not in {"throttle", "brake"}}
+    session._laps["BBB"] = ResampledLap(channels, bbb.step_m, bbb.meta)
+    perfect = _rpc(server, "rate", **SES, driver="BBB")["result"]["perfect"]
+    cols = read_soa(Path(perfect["traces"]["path"]), perfect["traces"]["columns"])
+    assert np.all(np.isnan(cols["lap.throttle"]))  # unknown, not a lift all lap
+    assert np.all(np.isnan(cols["lap.brake"]))  # unknown, not never braking
+    assert np.all(np.isfinite(cols["sim.throttle"]))
 
 
 def test_rate_without_perfect_lap(server: Server) -> None:

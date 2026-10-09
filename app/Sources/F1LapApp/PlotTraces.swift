@@ -60,6 +60,10 @@ struct PerfectPlot: Sendable {
     let sim: [Pt]
     let lap: [Pt]
     let delta: [Pt]
+    /// Both laps as cars on the racing line; nil when the trace file has no x/y.
+    let replay: GhostReplay?
+    /// The replay's line thinned to ~5 m, for drawing the track.
+    let outline: [(x: Double, y: Double)]
 
     @concurrent
     static func prepare(_ t: Traces) async -> PerfectPlot {
@@ -71,8 +75,18 @@ struct PerfectPlot: Sendable {
                 column[$0].isFinite ? Pt(d: distance[$0], v: column[$0], lap: lap) : nil
             }
         }
+        let replay = GhostReplay(t)
+        var outline: [(x: Double, y: Double)] = []
+        if let r = replay {
+            var last = -Double.infinity
+            for i in r.distance.indices where r.distance[i] - last >= 5 || i == r.distance.count - 1 {
+                outline.append((r.x[i], r.y[i]))
+                last = r.distance[i]
+            }
+        }
         return PerfectPlot(
             lengthM: distance.last ?? 0, sim: thin(t["sim.speed"], lap: "Perfect"),
-            lap: thin(t["lap.speed"], lap: "Lap"), delta: thin(t["delta"], lap: "Delta"))
+            lap: thin(t["lap.speed"], lap: "Lap"), delta: thin(t["delta"], lap: "Delta"),
+            replay: replay, outline: outline)
     }
 }

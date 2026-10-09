@@ -204,31 +204,20 @@ struct TrackMap: View {
 
     private func draw(_ ctx: GraphicsContext, _ size: CGSize) {
         let pts = traces.track
-        let rot = circuit.rotationDeg * .pi / 180
-        let rotated = pts.map { p in
-            CGPoint(x: p.x * cos(rot) - p.y * sin(rot), y: p.x * sin(rot) + p.y * cos(rot))
-        }
-        let xs = rotated.map(\.x), ys = rotated.map(\.y)
-        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max()
+        guard let project = TrackProjection(x: pts.map(\.x), y: pts.map(\.y),
+                                            rotationDeg: circuit.rotationDeg, size: size)
         else { return }
-        let inset = 18.0
-        let scale = min((size.width - 2 * inset) / max(maxX - minX, 1),
-                        (size.height - 2 * inset) / max(maxY - minY, 1))
-        let ox = (size.width - (maxX - minX) * scale) / 2
-        let oy = (size.height - (maxY - minY) * scale) / 2
-        func map(_ p: CGPoint) -> CGPoint {  // y up
-            CGPoint(x: ox + (p.x - minX) * scale, y: size.height - oy - (p.y - minY) * scale)
-        }
+        let screen = pts.map { project($0.x, $0.y) }
 
         // Saturates at 0.02 s lost or gained per 100 m.
-        for i in 1..<rotated.count {
+        for i in 1..<screen.count {
             let gain = pts[i].gain
             let strength = min(1, abs(gain) / 0.02)
             let base: Color = gain < 0 ? .green : .red
             let inWindow = window.map { $0.contains(pts[i].d) } ?? true
             var seg = Path()
-            seg.move(to: map(rotated[i - 1]))
-            seg.addLine(to: map(rotated[i]))
+            seg.move(to: screen[i - 1])
+            seg.addLine(to: screen[i])
             ctx.stroke(seg, with: .color(base.mix(with: .gray, by: 1 - strength)
                 .opacity(inWindow ? 1 : 0.25)),
                        style: StrokeStyle(lineWidth: inWindow ? 5 : 3, lineCap: .round))
@@ -236,17 +225,16 @@ struct TrackMap: View {
 
         for corner in circuit.corners {
             guard let i = nearest(corner.distanceM) else { continue }
-            let p = map(rotated[i])
+            let p = screen[i]
             ctx.draw(Text(corner.label).font(.caption2.bold()).foregroundStyle(.secondary),
                      at: CGPoint(x: p.x + 10, y: p.y - 10))
         }
         if let cursor, let i = nearest(cursor) {
-            let p = map(rotated[i])
+            let p = screen[i]
             ctx.fill(Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)),
                      with: .color(.primary))
         }
-        if let start = rotated.first {  // start/finish
-            let p = map(start)
+        if let p = screen.first {  // start/finish
             ctx.fill(Path(CGRect(x: p.x - 2, y: p.y - 8, width: 4, height: 16)), with: .color(.primary))
         }
     }

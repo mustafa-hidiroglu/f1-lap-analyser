@@ -28,6 +28,12 @@ enum Fmt {
 enum Palette {
     static let reference = Color.blue
     static let other = Color.orange
+    /// The perfect lap in the ghost replay.
+    static let perfect = Color.green
+    /// Ghost replay car phases: braking (both cars) and the rated car's lift; otherwise a car
+    /// shows its own colour.
+    static let braking = Color.red
+    static let lifting = Color(red: 1, green: 0.72, blue: 0)  // amber
     /// Negative delta = compared lap gaining.
     static func delta(_ s: Double) -> Color { s < 0 ? .green : s > 0 ? .red : .secondary }
 }
