@@ -17,7 +17,7 @@ import pytest
 from f1lap.circuit import Circuit, Corner, Segment, corner_segments
 from f1lap.cli import main
 from f1lap.delta import compare, corner_table
-from f1lap.phases import PHASES, analyse_corners, compare_corners, corner_points
+from f1lap.phases import PHASES, G, analyse_corners, compare_corners, corner_points, decel_zones
 from f1lap.store import write_lap
 from f1lap.trace import LapMeta, ResampledLap
 
@@ -83,6 +83,41 @@ def test_speed_only_data() -> None:
     p = corner_points(_lap(inputs=False), SEG)
     assert p.apex_m == 1000.0 and (p.mid_start_m, p.mid_end_m) == (944.0, 1055.0)
     assert p.brake_on_m is None and not p.flat
+
+
+def test_decel_zones_from_speed_alone() -> None:
+    # 300 km/h, a gentle 0.2 g drift from 500 m (drag), 4 g braking from 700 m to 100 km/h,
+    # then 1 g back up; no brake channel at all.
+    d = np.arange(2001.0)
+    v0 = 300.0 / 3.6
+    drift = np.sqrt(v0**2 - 2 * 0.2 * G * np.clip(d - 500.0, 0.0, None))
+    vb = drift[700]
+    brake = np.sqrt(np.clip(vb**2 - 2 * 4.0 * G * np.clip(d - 700.0, 0.0, None), 0.0, None))
+    accel = np.sqrt((100 / 3.6) ** 2 + 2 * G * np.clip(d - 1000.0, 0.0, None))
+    v = np.where(d < 1000, np.maximum(np.minimum(drift, brake), 100 / 3.6), np.minimum(accel, v0))
+    lap = ResampledLap({"distance": d, "time": np.cumsum(1.0 / v), "speed": v * 3.6},
+                       step_m=1.0, meta=LapMeta())
+    ((start, end),) = decel_zones(lap)
+    assert start == pytest.approx(700.0, abs=8.0)  # the 4 g onset, not the 0.2 g drift
+    assert 740.0 < end < 800.0
+
+
+def test_decel_zones_match_the_app() -> None:
+    # Shared fixture: GhostReplayTests.decelZonesMatchPython in app/Tests asserts the same
+    # starts. 80 m/s on a 1 m grid to 600 m: 2 g already under way at 0 m (dropped), a 1 g lift
+    # over 200-215 m shedding ~7 km/h (dropped before merging, so it cannot pull the next start
+    # to 200 m), 4 g over 228-268 m, 2 g over 450-470 m.
+    def accel(m: int) -> float:
+        return (-2 * G if m < 30 else -G if 200 <= m < 215 else -4 * G if 228 <= m < 268
+                else -2 * G if 450 <= m < 470 else 0.0)
+
+    v = [80.0]
+    for s in range(1, 601):
+        v.append(float(np.sqrt(max(v[-1] ** 2 + 2 * accel(s - 1), 0.0))))
+    speed = np.array(v)
+    lap = ResampledLap({"distance": np.arange(601.0), "time": np.cumsum(1.0 / speed),
+                        "speed": speed * 3.6}, step_m=1.0, meta=LapMeta())
+    assert [a for a, _ in decel_zones(lap)] == [224.0, 448.0]
 
 
 def test_phase_deltas_sum_to_segment_delta() -> None:

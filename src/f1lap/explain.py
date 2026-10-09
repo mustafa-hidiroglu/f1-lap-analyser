@@ -25,7 +25,7 @@ from f1lap.circuit import Segment, corner_segments
 from f1lap.context import LapContext, Span
 from f1lap.delta import compare
 from f1lap.ingest.fastf1_source import LapSelector
-from f1lap.phases import PHASES, CornerComparison, compare_corners
+from f1lap.phases import PHASES, CornerComparison, compare_corners, decel_zones
 from f1lap.sim import SimLap
 from f1lap.trace import ResampledLap
 
@@ -41,6 +41,8 @@ UNEXPLAINED_S: Final = 0.10
 APEX_KMH: Final = 3.0
 COAST_M: Final = 30.0  # lift-to-brake distance beyond the best laps' = lift-and-coast
 THROTTLE_LATE_M: Final = 15.0
+#: The sim's braking zone may start this far before its corner segment.
+SIM_BRAKE_LEAD_M: Final = 50.0
 STRAIGHT_KMH: Final = 5.0
 MIN_COST_S: Final = 0.02  # findings below this are noise
 SUMMARY_FINDINGS: Final = 4
@@ -122,20 +124,40 @@ class PerfectReport:
 class _Marks:
     """One lap through one corner, relative to the sim (positive = worse than the sim)."""
 
-    brake_early_m: float | None  # sim brake point - lap brake point
-    coast_m: float | None  # lap: lift (end of full attack) to brake point
+    brake_early_m: float | None  # sim braking point (deceleration) - lap brake pedal
+    coast_m: float | None  # lap: lift (end of full attack) to brake pedal
     apex_kmh: float  # speed deficit at the sim's apex
     exit_kmh: float  # ... where the sim is back on full power
     end_kmh: float  # ... at the end of the segment
     approach_kmh: float  # mean speed deficit on the way in (segment start → sim entry)
-    throttle_late_m: float  # lap full throttle - sim full throttle
+    throttle_late_m: float  # lap full throttle - sim apex
     phase_s: np.ndarray
 
 
-def _marks(c: CornerComparison, sim: ResampledLap, lap: ResampledLap) -> _Marks:
+def _sim_brake_on(zones: Sequence[tuple[float, float]], c: CornerComparison,
+                  prev_apex_m: float | None = None) -> float | None:
+    """The perfect lap's braking point: start of its first `decel_zones` zone from
+    SIM_BRAKE_LEAD_M before the segment start (a zone may begin just before the segment) to
+    its apex, but after the previous corner's apex so that corner's zone is never taken. Its
+    brake channel cannot be used: that only marks where the braking model binds, which on most
+    sessions is nowhere (it may brake as late as any lap showed, so the demonstrated speeds
+    bind instead)."""
+    lo = c.segment.start_m - SIM_BRAKE_LEAD_M
+    after = -np.inf if prev_apex_m is None else prev_apex_m
+    return next((a for a, _ in zones if lo <= a <= c.reference.apex_m and a > after), None)
+
+
+def _marks(c: CornerComparison, sim: ResampledLap, lap: ResampledLap,
+           s_on: float | None) -> _Marks:
+    """The sim has no pedals (it brakes wherever its speed falls hard and is "flat" wherever its
+    speed is not falling), so the lap's brake pedal and full-throttle point are measured from
+    fixed per-corner anchors on the sim — its deceleration-based braking point and its apex —
+    rather than from the sim's own inputs. Rules subtract the best laps' median of each mark, so
+    the anchors cancel and findings compare the lap's pedal with the best laps' pedals; the sim
+    braking point `s_on` (`_sim_brake_on`) also gates the braking rules to corners where the
+    perfect lap really brakes."""
     s, o = c.reference, c.other
-    early = (s.brake_on_m - o.brake_on_m
-             if s.brake_on_m is not None and o.brake_on_m is not None else None)
+    early = s_on - o.brake_on_m if s_on is not None and o.brake_on_m is not None else None
     step, n = sim.step_m, len(sim)
     vs, vl = sim["speed"], lap["speed"]
 
@@ -153,7 +175,7 @@ def _marks(c: CornerComparison, sim: ResampledLap, lap: ResampledLap) -> _Marks:
         exit_kmh=deficit(max(s.full_throttle_m, s.apex_m + 50.0)),
         end_kmh=deficit(c.segment.end_m),
         approach_kmh=float(np.mean(vs[lo:hi] - vl[lo:hi])),
-        throttle_late_m=o.full_throttle_m - s.full_throttle_m,
+        throttle_late_m=o.full_throttle_m - s.apex_m,
         phase_s=c.phase_delta_s,
     )
 
@@ -234,10 +256,12 @@ def _corner_findings(name: str, m: _Marks, base: list[_Marks], cost: np.ndarray,
                                f"apex than the best laps; the deficit carries onto the exit "
                                f"({c:.2f} s).", name, c))
     # Exit: the deficit grows after the apex — late or hesitant on the throttle.
-    late = m.throttle_late_m - med("throttle_late_m")
+    late_base = _base([x.throttle_late_m for x in base])
     if ex not in used and exit_ - max(apex, 0.0) >= APEX_KMH and cost[ex] + cost[st] >= MIN_COST_S:
         c = claim(ex, st)
-        detail = f", full throttle {late:.0f} m later" if late >= THROTTLE_LATE_M else ""
+        late = None if late_base is None else m.throttle_late_m - late_base
+        detail = (f", full throttle {late:.0f} m later"
+                  if late is not None and late >= THROTTLE_LATE_M else "")
         out.append(Finding("slow_exit", f"{name}: slow exit — {exit_:.0f} km/h down where the "
                            f"best laps were back on full power{detail} ({c:.2f} s).", name, c))
     # Way in: slower on average before the corner (straight, or a complex's first corners).
@@ -344,11 +368,13 @@ def explain(
     corners, on_grid = _corners(sim, lap, segments)
     base_runs = [_corners(sim, c, segments) for c in calibration]
     simlap = sim.lap
+    sim_zones = decel_zones(simlap)
 
     reasons: list[CornerReason] = []
     for i, c in enumerate(corners):
-        m = _marks(c, simlap, on_grid)
-        base = [_marks(run[i], simlap, other) for run, other in base_runs]
+        s_on = _sim_brake_on(sim_zones, c, corners[i - 1].reference.apex_m if i else None)
+        m = _marks(c, simlap, on_grid, s_on)
+        base = [_marks(run[i], simlap, other, s_on) for run, other in base_runs]
         typical = (np.median(np.vstack([x.phase_s for x in base]), axis=0)
                    if base else np.zeros(len(PHASES)))
         cost = c.phase_delta_s - typical

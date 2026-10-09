@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,9 +16,10 @@ import pytest
 import f1lap.sim as simmod
 import f1lap.simbase_build as builder
 from f1lap import simbase
-from f1lap.circuit import Circuit, Corner, corner_segments
+from f1lap.circuit import Circuit, Corner, Segment, corner_segments
 from f1lap.context import LapContext, Span, flag_spans, session_kind, traffic_spans
-from f1lap.explain import explain
+from f1lap.explain import _corner_findings, _Marks, _sim_brake_on, explain
+from f1lap.phases import PHASES, CornerComparison
 from f1lap.resample import resample_to_distance
 from f1lap.session import LoadedSession
 from f1lap.sim import CarModel, SimError, simulate, solve, warp_to_line
@@ -285,6 +287,74 @@ def test_context_becomes_sentences(laps: list[ResampledLap]) -> None:
     lap_text = " ".join(f.text for f in report.lap_findings)
     assert "Lost 1 position" in lap_text and "NOR was 0.4 s behind" in lap_text
     assert "22 laps old — worn" in lap_text and "heavy fuel load" in lap_text
+
+
+def _braking_lap(brake_m: float, driver: str, *, pedal: bool = True) -> ResampledLap:
+    """300 km/h, 0.2 g drift (lifted) for 200 m, 4 g braking from `brake_m` to 100 km/h, held
+    to the apex at 1500 m, then 1 g back up — on a 3000 m lap."""
+    d = np.arange(0.0, 3001.0)
+    g, v0, vmin = 9.81, 300.0 / 3.6, 100.0 / 3.6
+    drift = np.sqrt(np.clip(v0**2 - 2 * 0.2 * g * np.clip(d - (brake_m - 200.0), 0.0, None),
+                            0.0, None))
+    vb = drift[int(brake_m)]
+    braking = np.sqrt(np.clip(vb**2 - 2 * 4.0 * g * np.clip(d - brake_m, 0.0, None), 0.0, None))
+    accel = np.minimum(np.sqrt(vmin**2 + 2 * g * np.clip(d - 1500.0, 0.0, None)), v0)
+    v = np.where(d < 1500, np.maximum(np.minimum(drift, braking), vmin), accel)
+    dt = 1.0 / v
+    t = np.cumsum(dt) - dt[0]
+    on = (d >= brake_m) & (d < 1500) & (v > vmin + 0.1)
+    lift = (d >= brake_m - 200.0) & (d < 1500)
+    channels = {
+        "distance": d, "time": t, "speed": v * 3.6,
+        "throttle": (np.where(lift, 0.0, 100.0) if pedal
+                     else np.where(np.gradient(v) < -1e-4, simmod.GRIP_THROTTLE, 100.0)),
+        "brake": on.astype(np.float64) if pedal else np.zeros(d.size),
+    }
+    meta = LapMeta(driver=driver, lap_number=1, lap_time_s=float(t[-1] + dt[0]),
+                   year=1999, event="Test Grand Prix", session="Qualifying")
+    return ResampledLap(channels, step_m=1.0, meta=meta)
+
+
+def test_braked_early_against_a_sim_that_never_brakes() -> None:
+    # The sim's brake channel is empty (as on most real sessions): its braking point comes from
+    # its deceleration, so a lap braking 20 m before the best laps is still found.
+    sim_lap = _braking_lap(1350.0, simmod.SIM_DRIVER, pedal=False)
+    sim = simmod.SimLap(lap=sim_lap, model=CarModel(10.0, 500.0, 1e-4, 30.0, 1e-3, 90.0),  # unused
+                        calibration=(), fastest_lap_s=None)
+    best = [_braking_lap(1350.0, n) for n in ("AAA", "BBB", "CCC")]
+    circuit = Circuit("Test", 3000.0, (Corner(1, 1500.0),), source="test")
+    report = explain(_braking_lap(1330.0, "EEE"), sim, corner_segments(circuit, sim_lap), best)
+    (finding,) = [f for c in report.corners for f in c.findings if f.kind == "braked_early"]
+    assert "braked 20 m earlier" in finding.text
+    assert finding.cost_s is not None and finding.cost_s > 0.02
+    same = explain(best[0], sim, corner_segments(circuit, sim_lap), best)
+    assert not [f for c in same.corners for f in c.findings if f.cost_s is not None]
+
+
+def test_sim_braking_zone_may_start_before_its_segment() -> None:
+    # Monaco 2024 Q T3-4: the segment starts at 656 m, the perfect lap's zone at 646 m; the
+    # next zone (828 m) belongs to a later braking event.
+    zones = [(646.0, 700.0), (828.0, 860.0)]
+    seg = Segment("T3-4", 656.0, 900.0, (870.0,))
+    c: Any = SimpleNamespace(segment=seg, reference=SimpleNamespace(apex_m=870.0))
+    corner: CornerComparison = c
+    assert _sim_brake_on(zones, corner) == 646.0
+    assert _sim_brake_on(zones, corner, prev_apex_m=640.0) == 646.0
+    # ... but never the previous corner's zone, nor one ending far before the segment.
+    assert _sim_brake_on(zones, corner, prev_apex_m=650.0) == 828.0
+    assert _sim_brake_on([(600.0, 640.0)], corner) is None
+
+
+def test_slow_exit_without_best_laps_claims_no_throttle_distance() -> None:
+    # The full-throttle mark is lap full throttle - sim apex (~+100 m on any lap), so without
+    # best laps to subtract there is nothing to compare it with.
+    m = _Marks(brake_early_m=None, coast_m=None, apex_kmh=0.0, exit_kmh=10.0, end_kmh=0.0,
+               approach_kmh=0.0, throttle_late_m=120.0, phase_s=np.zeros(len(PHASES)))
+    cost = np.array([0.0, 0.0, 0.0, 0.1, 0.1])
+    (finding,) = _corner_findings("T1", m, [], cost)
+    assert finding.kind == "slow_exit" and "full throttle" not in finding.text
+    (finding,) = _corner_findings("T1", m, [replace(m, exit_kmh=0.0, throttle_late_m=90.0)], cost)
+    assert "full throttle 30 m later" in finding.text
 
 
 # -- builder ----------------------------------------------------------------------------------

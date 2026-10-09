@@ -42,6 +42,15 @@ PICKUP_THROTTLE: Final = 20.0  # % with brake off counts as back on the throttle
 APEX_SEARCH_M: Final = 150.0  # search for the apex this far either side of the corner markers
 PHASES: Final = ("approach", "braking", "mid", "exit", "straight")
 
+# Braking from the speed trace alone (`decel_zones`): works for the simulated lap, whose brake
+# channel only marks where its braking model binds (rarely: it may brake as late as any lap
+# showed), and for laps without a usable brake channel.
+G: Final = 9.81  # m/s²
+DECEL_BRAKE_G: Final = 0.5  # -v·dv/ds at or above this counts as braking (drag decay is below)
+DECEL_SMOOTH_M: Final = 4.0  # Gaussian sigma on speed before differentiating (telemetry noise)
+DECEL_DEBOUNCE_M: Final = 10.0  # merge zones closer than this; drop zones shorter than this
+DECEL_MIN_DROP_KMH: Final = 10.0  # a zone must shed at least this much speed
+
 
 @dataclass(frozen=True, slots=True)
 class CornerPoints:
@@ -84,6 +93,58 @@ def braking_mask(brake: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
     if has_pressure(brake):
         return np.asarray(brake > PRESSURE_ON * brake.max())
     return np.asarray(brake >= BRAKE_ON)
+
+
+def _smooth(v: F64, step: float) -> F64:
+    """`v` smoothed with a Gaussian (sigma DECEL_SMOOTH_M) cut at 3 sigma, renormalised over
+    the finite values in reach (a row with none stays NaN). Same as `GhostReplay.smooth` in the
+    app."""
+    h = int(3 * DECEL_SMOOTH_M / step + 1e-9)
+    w = np.exp(-((np.arange(-h, h + 1) * step / DECEL_SMOOTH_M) ** 2) / 2)
+    ok = np.isfinite(v)
+    total = np.convolve(np.where(ok, v, 0.0), w)[h : h + v.size]
+    weight = np.convolve(ok.astype(np.float64), w)[h : h + v.size]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(weight > 0, total / weight, np.nan)
+
+
+def decel_zones(lap: ResampledLap) -> list[tuple[float, float]]:
+    """Braking zones (start_m, end_m) where the car decelerates at ≥ DECEL_BRAKE_G, from speed
+    smoothed by DECEL_SMOOTH_M. Runs shedding less than DECEL_MIN_DROP_KMH (first to slowest
+    raw speed) are dropped first, so a lift that does not qualify cannot pull a zone's start
+    earlier; the rest are merged across gaps shorter than DECEL_DEBOUNCE_M, and zones shorter
+    than that or already under way on the first row are dropped. Unlike the brake pedal this
+    is defined the same way for real and simulated laps, and the same way as the app's ghost
+    replay (`GhostReplay.runs`)."""
+    step = lap.step_m
+    d = lap[schema.DISTANCE]
+    speed = lap["speed"]
+    n = speed.size
+    v = _smooth(speed / 3.6, step)
+    with np.errstate(invalid="ignore"):
+        on = -v * np.gradient(v, step) >= DECEL_BRAKE_G * G
+    edges = np.diff(on.astype(np.int8), prepend=0, append=0)
+    runs = zip(np.flatnonzero(edges == 1).tolist(), (np.flatnonzero(edges == -1) - 1).tolist(),
+               strict=True)
+
+    def end_m(b: int) -> float:  # where the run ending on row b stops: the next row
+        return float(d[min(b + 1, n - 1)])
+
+    def sheds(a: int, b: int) -> bool:
+        seg = speed[a : b + 1]
+        seg = seg[np.isfinite(seg)]
+        return bool(seg.size) and float(seg[0] - seg.min()) >= DECEL_MIN_DROP_KMH
+
+    merged: list[tuple[int, int]] = []
+    for a, b in runs:
+        if not sheds(a, b):
+            continue
+        if merged and d[a] - end_m(merged[-1][1]) < DECEL_DEBOUNCE_M:
+            merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    return [(float(d[a]), float(d[b])) for a, b in merged
+            if a > 0 and end_m(b) - d[a] >= DECEL_DEBOUNCE_M]
 
 
 def _first(mask: npt.NDArray[np.bool_]) -> int | None:
