@@ -23,6 +23,13 @@ public struct SessionInfo: Decodable, Sendable {
     public func laps(of driver: String) -> [LapRow] {
         laps.filter { $0.driver == driver }
     }
+
+    /// The session's fastest lap across all drivers: the quickest valid lap (deleted, inaccurate
+    /// and pit laps never count), nil when none is valid. Ties go to the first in `laps` order.
+    public func fastestLap() -> LapRow? {
+        laps.filter { $0.valid && $0.timeS != nil }
+            .min { $0.timeS ?? .infinity < $1.timeS ?? .infinity }
+    }
 }
 
 public struct Driver: Decodable, Sendable, Hashable, Identifiable {

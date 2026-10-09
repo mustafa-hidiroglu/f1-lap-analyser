@@ -130,25 +130,38 @@ struct LapPicker<Accessory: View>: View {
             Circle().fill(color).frame(width: 9, height: 9)
             Text(title).foregroundStyle(.secondary).fixedSize()
             accessory
-            Picker(title, selection: $choice.driver) {
-                Text("Driver").tag(String?.none)
+            Picker(title, selection: $choice.pick) {
+                Text("Driver").tag(LapChoice.Pick?.none)
+                Text("★ Fastest").tag(Optional(LapChoice.Pick.sessionFastest))
+                Divider()
                 ForEach(info?.drivers ?? []) { d in
-                    Text(d.position.map { "P\($0)  \(d.code)" } ?? d.code).tag(Optional(d.code))
+                    Text(d.position.map { "P\($0)  \(d.code)" } ?? d.code)
+                        .tag(Optional(LapChoice.Pick.driver(d.code)))
                 }
             }
             .labelsHidden()
             .frame(width: 110)
-            .onChange(of: choice.driver) { choice.lap = nil }
+            .help("★ Fastest: the session's fastest valid lap, whoever set it")
+            .onChange(of: choice.pick) { choice.lap = nil }
+            // The session-fastest pick fixes the lap, so this only shows who set it.
             Picker("Lap", selection: $choice.lap) {
-                Text("Fastest").tag(Int?.none)
-                ForEach(model.laps(of: choice.driver, in: info)) { lap in
-                    Text("L\(lap.lap)  \(Fmt.lapTime(lap.timeS))\(lap.valid ? "" : "  ✕")"
-                         + (lap.personalBest ? "  ★" : ""))
-                        .tag(Optional(lap.lap))
+                if choice.pick == .sessionFastest {
+                    let best = info?.fastestLap()
+                    Text(best.map { "\($0.driver)  L\($0.lap)  \(Fmt.lapTime($0.timeS))" }
+                         ?? (info == nil ? "Loading…" : "No valid lap"))
+                        .tag(Int?.none)
+                } else {
+                    Text("Fastest").tag(Int?.none)
+                    ForEach(model.laps(of: choice.driver, in: info)) { lap in
+                        Text("L\(lap.lap)  \(Fmt.lapTime(lap.timeS))\(lap.valid ? "" : "  ✕")"
+                             + (lap.personalBest ? "  ★" : ""))
+                            .tag(Optional(lap.lap))
+                    }
                 }
             }
             .labelsHidden()
             .frame(width: 160)
+            .disabled(choice.pick == .sessionFastest)
         }
     }
 }
