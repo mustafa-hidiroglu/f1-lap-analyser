@@ -191,12 +191,16 @@ public sealed class AppModel(F1LapService service) : INotifyPropertyChanged
             Events = events;
             if (!events.Any(e => e.Round == EventRound)) EventRound = null;
             OnPropertyChanged(nameof(Event));
+            // The same round and session in the new season is a different session: load it
+            // (otherwise the old season's laps would stay under the new season's key).
+            if (Key is not null && Info is { } loaded && loaded.Year != Year) LoadSession();
         });
     }
 
     private void LoadSession()
     {
         _sessionCts?.Cancel();
+        CancelAnalysis();
         Info = null;
         Comparison = null;
         Rating = null;
@@ -226,6 +230,7 @@ public sealed class AppModel(F1LapService service) : INotifyPropertyChanged
     private void LoadOtherSession()
     {
         _otherCts?.Cancel();
+        _analysisCts?.Cancel();  // a comparison against the old compared session is stale
         OtherKey = null;
         OtherInfo = null;
         Comparison = null;
@@ -235,10 +240,18 @@ public sealed class AppModel(F1LapService service) : INotifyPropertyChanged
             return;
         }
         var cts = _otherCts = new CancellationTokenSource();
-        var sessionTask = _sessionTask;
-        _otherTask = Run($"Finding {ev.Name} in {otherYear}", async () =>
+        _otherTask = FindOtherSession(_sessionTask, otherYear, ev, sessionName, cts);
+    }
+
+    private async Task FindOtherSession(Task? sessionTask, int otherYear, Event ev, string sessionName,
+                                        CancellationTokenSource cts)
+    {
+        // Default to the reference driver once it is chosen. Waited for outside `Run`, so the
+        // status line shows the reference session loading rather than "Finding…".
+        if (sessionTask is not null) await sessionTask;
+        if (cts.IsCancellationRequested) return;
+        await Run($"Finding {ev.Name} in {otherYear}", async () =>
         {
-            if (sessionTask is not null) await sessionTask;  // default to the reference driver
             var events = await Service.ScheduleAsync(otherYear, cts.Token);
             // Same circuit; names change (sponsors, "Mexican" → "Mexico City").
             var match = events.FirstOrDefault(e => e.Location == ev.Location)
@@ -265,6 +278,13 @@ public sealed class AppModel(F1LapService service) : INotifyPropertyChanged
                 : info.Drivers.OrderBy(d => d.Position ?? 99).FirstOrDefault()?.Code;
             Other = LapChoice.ForDriver(driver);
         }, cts.Token);
+    }
+
+    /// Drops in-flight comparison and rating: their results belong to the previous session.
+    private void CancelAnalysis()
+    {
+        _analysisCts?.Cancel();
+        _ratingCts?.Cancel();
     }
 
     public void Compare()

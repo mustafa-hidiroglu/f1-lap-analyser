@@ -30,14 +30,17 @@ public sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var client = new SidecarClient(LocateSidecar());
+            var config = LocateSidecar();
+            var client = new SidecarClient(config ?? SidecarConfig.Repository(AppContext.BaseDirectory));
             var model = new AppModel(new F1LapService(client));
             var window = new MainWindow(model);
             desktop.MainWindow = window;
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-            desktop.ShutdownRequested += (_, _) => client.ShutdownAsync().Wait(TimeSpan.FromSeconds(3));
+            // Never wait on the UI thread at exit: stop the sidecar (and anything it spawned) now.
+            desktop.Exit += (_, _) => client.Terminate();
             DevSnapshot.ScheduleIfRequested(window, model);
-            _ = model.StartAsync();
+            if (config is null) model.Error = MissingRepo;
+            else _ = model.StartAsync();
         }
         base.OnFrameworkInitializationCompleted();
     }
@@ -45,7 +48,7 @@ public sealed class App : Application
     /// `F1LAP_REPO` if set, else the checkout this was built from, else the nearest folder
     /// above the executable with a `.venv` (personal use: the app runs the repository's
     /// virtualenv rather than a bundled interpreter, like the Mac app).
-    private static SidecarConfig LocateSidecar()
+    private static SidecarConfig? LocateSidecar()
     {
         static bool HasVenv(string? dir) => dir is not null && File.Exists(SidecarConfig.VenvPython(dir));
         var env = Environment.GetEnvironmentVariable("F1LAP_REPO");
@@ -55,8 +58,13 @@ public sealed class App : Application
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); repo is null && dir is not null;
              dir = dir.Parent)
             if (HasVenv(dir.FullName)) repo = dir.FullName;
-        return SidecarConfig.Repository(repo ?? built ?? AppContext.BaseDirectory);
+        return repo is null ? null : SidecarConfig.Repository(repo);
     }
+
+    /// Shown when no checkout is found (the exe was moved, or built on another machine), rather
+    /// than failing on a path that only existed where it was built.
+    private const string MissingRepo = "No f1lap checkout with a .venv found. Set F1LAP_REPO to the "
+        + "repository, or keep F1Lap.exe inside it, and run `uv sync` there.";
 
     /// Fluent controls reshaped toward their macOS counterparts: popup buttons, bordered
     /// buttons, sidebar selection.

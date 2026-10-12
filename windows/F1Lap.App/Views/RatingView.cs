@@ -17,6 +17,7 @@ public sealed class RatingView : UserControl
         side.SelectionChanged += i => model.RatedSide = i == 0 ? AppModel.Side.Reference : AppModel.Side.Compared;
         var rate = new Button { Content = Ui.Label(Glyph.Gauge, "Rate"), IsEnabled = model.Key is not null };
         rate.Click += (_, _) => model.Rate();
+        Ui.Observe(rate, model, _ => rate.IsEnabled = model.Key is not null);
         var header = new DockPanel { Margin = new Thickness(12) };
         DockPanel.SetDock(rate, Dock.Right);
         header.Children.Add(rate);

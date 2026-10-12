@@ -213,6 +213,28 @@ public class TransportTests
     }
 
     [Fact]
+    public async Task TerminateFailsInFlightAndRefusesNewCalls()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var client = Shell("read l; sleep 30");  // never answers
+        var inFlight = client.CallAsync<int>("compare");
+        await Task.Delay(200);
+        client.Terminate();  // app exit: no waiting
+        await Assert.ThrowsAsync<SidecarExitedException>(() => inFlight);
+        // A closed client must not relaunch a sidecar nobody will stop.
+        await Assert.ThrowsAsync<SidecarExitedException>(() => client.CallAsync<int>("ping"));
+    }
+
+    [Fact]
+    public async Task MalformedReplyDoesNotStallTheReader()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await using var client = Shell(
+            """read l; echo '{"jsonrpc":"2.0","id":"x","method":5}'; echo '{"jsonrpc":"2.0","id":1,"result":7}'; read l""");
+        Assert.Equal(7, await client.CallAsync<int>("ping"));
+    }
+
+    [Fact]
     public async Task LaunchFailure()
     {
         await using var client = new SidecarClient(new SidecarConfig("/nonexistent/python", []));

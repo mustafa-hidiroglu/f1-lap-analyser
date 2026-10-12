@@ -59,12 +59,15 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private readonly Dictionary<int, TaskCompletionSource<JsonElement>> _pending = [];
+    /// In-flight requests with the process generation they were sent to, so a process going away
+    /// fails only its own requests, never ones already sent to its replacement.
+    private readonly Dictionary<int, (int Gen, TaskCompletionSource<JsonElement> Tcs)> _pending = [];
     private readonly Queue<string> _stderrTail = new();
     private Process? _process;
     private StreamWriter? _input;
     private int _generation;
     private int _nextId = 1;
+    private bool _closed;
 
     /// Progress notifications from the sidecar; raised on a thread-pool thread.
     public event Action<SidecarProgress>? Progress;
@@ -85,27 +88,45 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
         }
     }
 
-    /// Stops the sidecar. Closing stdin lets it finish cleanly; it is killed if still running.
+    /// Stops the sidecar for good. Closing stdin lets it finish cleanly; it is killed if still
+    /// running after two seconds. Later calls fail instead of starting a new process.
     public async Task ShutdownAsync()
+    {
+        var process = Detach();
+        if (process is null) return;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        // Not on the caller's context: a UI thread may be the one waiting for this.
+        try { await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { TryKill(process); }
+    }
+
+    /// Stops the sidecar at once without waiting (app exit): closes stdin and kills the process
+    /// tree, so a sidecar busy downloading a session never outlives the app.
+    public void Terminate()
+    {
+        if (Detach() is { } process) TryKill(process);
+    }
+
+    public async ValueTask DisposeAsync() => await ShutdownAsync().ConfigureAwait(false);
+
+    /// Marks the client closed, fails what is in flight and hands back the process to stop.
+    private Process? Detach()
     {
         Process? process;
         StreamWriter? input;
+        int gen;
         lock (_gate)
         {
-            (process, input) = (_process, _input);
+            _closed = true;
+            (process, input, gen) = (_process, _input, _generation);
             _process = null;
             _input = null;
             _generation++;  // the old process's stdout closing is no longer news
         }
-        if (process is null) return;
         try { input?.Close(); } catch (IOException) { }
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        try { await process.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException) { TryKill(process); }
-        FailPending(new SidecarExitedException(0, ""));
+        FailPending(gen, new SidecarExitedException(0, ""));
+        return process;
     }
-
-    public async ValueTask DisposeAsync() => await ShutdownAsync();
 
     // MARK: transport
 
@@ -116,9 +137,10 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
+            if (_closed) throw new SidecarExitedException(0, "");
             input = StartIfNeeded();
             id = _nextId++;
-            _pending[id] = tcs;
+            _pending[id] = (_generation, tcs);
         }
         var line = JsonSerializer.Serialize(
             new Dictionary<string, object?>
@@ -162,9 +184,13 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
         if (_process is { HasExited: true } dead)
         {
             // Its stdout loop may not have reported yet; requests sent to it will never be answered.
-            foreach (var t in _pending.Values)
-                t.TrySetException(new SidecarExitedException(dead.ExitCode, string.Join("\n", _stderrTail.TakeLast(5))));
-            _pending.Clear();
+            var error = new SidecarExitedException(dead.ExitCode, string.Join("\n", _stderrTail.TakeLast(5)));
+            foreach (var (id, (sentTo, tcs)) in _pending.ToList())
+            {
+                if (sentTo != _generation) continue;
+                _pending.Remove(id);
+                tcs.TrySetException(error);  // continuations run asynchronously: safe under the lock
+            }
         }
         var info = new ProcessStartInfo(config.Executable)
         {
@@ -203,7 +229,13 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
             try
             {
                 while (await stdout.ReadLineAsync() is { } line)
-                    if (line.Length > 0) Deliver(line);
+                {
+                    if (line.Length == 0) continue;
+                    // Keep draining stdout whatever one line does: a stalled reader would block
+                    // the sidecar's writes and hang every call.
+                    try { Deliver(line); }
+                    catch (Exception e) { Debug.WriteLine($"[sidecar] dropped reply: {e.Message}"); }
+                }
             }
             catch (Exception e) when (e is IOException or ObjectDisposedException) { }
             await StdoutClosed(gen, process);
@@ -240,11 +272,12 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
             return;
         }
         if (root.ValueKind != JsonValueKind.Object) return;
-        bool hasId = root.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number;
+        bool hasId = root.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number
+                     && idEl.TryGetInt32(out _);
         if (!hasId)
         {
-            if (root.TryGetProperty("method", out var m) && m.GetString() == "progress"
-                && root.TryGetProperty("params", out var p))
+            if (root.TryGetProperty("method", out var m) && m.ValueKind == JsonValueKind.String
+                && m.GetString() == "progress" && root.TryGetProperty("params", out var p))
             {
                 try
                 {
@@ -254,15 +287,17 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
             }
             return;
         }
-        TaskCompletionSource<JsonElement>? tcs;
+        TaskCompletionSource<JsonElement> tcs;
         lock (_gate)
         {
-            if (!_pending.Remove(idEl.GetInt32(), out tcs)) return;
+            if (!_pending.Remove(idEl.GetInt32(), out var entry)) return;
+            tcs = entry.Tcs;
         }
         if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object)
         {
             int code = error.TryGetProperty("code", out var c) && c.TryGetInt32(out var ci) ? ci : 0;
-            string message = error.TryGetProperty("message", out var msg) ? msg.GetString() ?? "" : "";
+            string message = error.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String
+                ? msg.GetString() ?? "" : "";
             tcs.TrySetException(new SidecarRpcException(code, message));
         }
         else
@@ -279,11 +314,13 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
         int status = process.HasExited ? process.ExitCode : -1;
         lock (_gate)
         {
-            if (gen != _generation) return;  // an older, already replaced process
-            _process = null;
-            _input = null;
+            if (gen == _generation)  // not already replaced or shut down
+            {
+                _process = null;
+                _input = null;
+            }
         }
-        FailPending(new SidecarExitedException(status, StderrTail()));
+        FailPending(gen, new SidecarExitedException(status, StderrTail()));
     }
 
     private string StderrTail()
@@ -291,13 +328,18 @@ public sealed class SidecarClient(SidecarConfig config) : IAsyncDisposable
         lock (_gate) return string.Join("\n", _stderrTail.TakeLast(5));
     }
 
-    private void FailPending(SidecarException error)
+    /// Fails the requests sent to process generation `gen`.
+    private void FailPending(int gen, SidecarException error)
     {
-        List<TaskCompletionSource<JsonElement>> waiting;
+        List<TaskCompletionSource<JsonElement>> waiting = [];
         lock (_gate)
         {
-            waiting = [.. _pending.Values];
-            _pending.Clear();
+            foreach (var (id, entry) in _pending.ToList())
+            {
+                if (entry.Gen != gen) continue;
+                _pending.Remove(id);
+                waiting.Add(entry.Tcs);
+            }
         }
         foreach (var t in waiting) t.TrySetException(error);
     }

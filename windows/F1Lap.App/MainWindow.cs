@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -46,16 +48,28 @@ public sealed class MainWindow : Window
         ExtendClientAreaTitleBarHeightHint = ToolbarHeight;
         Ui.Res(this, BackgroundProperty, MacTheme.Keys.WindowBackground);
 
-        KeyBindings.Add(new KeyBinding
+        // Shortcuts on the tunnelling pass, so a focused picker (which handles Enter itself) can't
+        // swallow them; the Mac app's menu commands work anywhere in the window too. Ctrl+Shift+S
+        // rather than Ctrl+Alt+S, which is AltGr+S on many European (and Turkish) layouts.
+        AddHandler(KeyDownEvent, (_, e) =>
         {
-            Gesture = new KeyGesture(Key.Enter, KeyModifiers.Control),
-            Command = new Command(() => { if (_model.CanCompare) _model.Compare(); }),
-        });
-        KeyBindings.Add(new KeyBinding
+            if (e.Key is Key.Enter or Key.Return && e.KeyModifiers == KeyModifiers.Control)
+            {
+                if (_model.CanCompare) _model.Compare();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.S && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+            {
+                ToggleSidebar();
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Tunnel);
+        // A maximized window on a small screen may not fit sidebar + detail: hide the sidebar
+        // rather than clip the detail column.
+        PropertyChanged += (_, e) =>
         {
-            Gesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Alt),
-            Command = new Command(ToggleSidebar),
-        });
+            if (e.Property == ClientSizeProperty || e.Property == WindowStateProperty) FitSidebar();
+        };
 
         _model.PropertyChanged += (_, e) =>
         {
@@ -88,6 +102,10 @@ public sealed class MainWindow : Window
         Ui.Res(sidebarPane, Panel.BackgroundProperty, MacTheme.Keys.SidebarBackground);
         Grid.SetRow(sidebar, 1);
         sidebarPane.Children.Add(sidebar);
+        // The sidebar's top strip is title bar too: a transparent drag layer over the header.
+        var sidebarCaption = new Border { Background = Brushes.Transparent };
+        MakeDraggable(sidebarCaption);
+        sidebarPane.Children.Add(sidebarCaption);
         // On a Mac (development) the traffic lights sit on the sidebar's top edge, as in the
         // real app; on Windows the app name goes there.
         if (!OperatingSystem.IsMacOS())
@@ -159,7 +177,7 @@ public sealed class MainWindow : Window
             Margin = new Thickness(10, 0), Padding = new Thickness(6, 4),
         };
         Ui.Secondary(toggle);
-        ToolTip.SetTip(toggle, "Show or hide the sidebar (Ctrl+Alt+S)");
+        ToolTip.SetTip(toggle, "Show or hide the sidebar (Ctrl+Shift+S)");
         toggle.Click += (_, _) => ToggleSidebar();
         toolbar.Children.Add(toggle);
         _toggle = toggle;
@@ -170,6 +188,7 @@ public sealed class MainWindow : Window
         };
         _tabs.SelectionChanged += i => _model.Tab = (AppModel.Tabs)i;
         toolbar.Children.Add(_tabs);
+        MakeDraggable(toolbar);
         return toolbar;
     }
 
@@ -178,6 +197,10 @@ public sealed class MainWindow : Window
         _sidebarShown = !_sidebarShown;
         ApplySidebar();
     }
+
+    /// The screen's working width in DIPs, or null before the window is on a screen.
+    private double? ScreenWidth =>
+        Screens.ScreenFromWindow(this) is { } s ? s.WorkingArea.Width / s.Scaling : null;
 
     private void ApplySidebar()
     {
@@ -189,32 +212,55 @@ public sealed class MainWindow : Window
         // The toggle clears the macOS traffic lights when the sidebar is hidden.
         if (_toggle is not null)
             _toggle.Margin = new Thickness(OperatingSystem.IsMacOS() && !_sidebarShown ? 80 : 10, 0, 0, 0);
-        MinWidth = RequiredWidth;
-        if (WindowState == WindowState.Normal && Width < RequiredWidth)
+        // Never ask for more than the screen has; FitSidebar hides the sidebar when both can't fit.
+        MinWidth = Math.Min(RequiredWidth, ScreenWidth ?? double.PositiveInfinity);
+        if (WindowState == WindowState.Normal && Width < MinWidth)
         {
             // Grow (to the right, or left if the screen edge is in the way) rather than clip.
-            double grow = RequiredWidth - Width;
-            Width = RequiredWidth;
-            if (Screens.ScreenFromWindow(this)?.WorkingArea is { } area)
+            Width = MinWidth;
+            if (Screens.ScreenFromWindow(this) is { } screen)
             {
-                double scale = RenderScaling;
-                double right = Position.X + RequiredWidth * scale;
+                var area = screen.WorkingArea;
+                double right = Position.X + MinWidth * DesktopScaling;
                 if (right > area.Right)
-                    Position = new PixelPoint(Math.Max(area.X, (int)(Position.X - grow * scale)), Position.Y);
+                    Position = new PixelPoint(Math.Max(area.X, (int)(area.Right - MinWidth * DesktopScaling)), Position.Y);
             }
         }
+        FitSidebar();
+    }
+
+    /// Hides the sidebar when the window can't be made wide enough for it and the detail column
+    /// (maximized on a small screen), so the detail column is never clipped.
+    private void FitSidebar()
+    {
+        if (!_sidebarShown || _sidebarColumn is null) return;
+        bool fixedSize = WindowState is WindowState.Maximized or WindowState.FullScreen;
+        if ((fixedSize || ScreenWidth < RequiredWidth) && ClientSize.Width > 0 && ClientSize.Width < RequiredWidth)
+        {
+            _sidebarShown = false;
+            ApplySidebar();
+        }
+    }
+
+    /// Drags the window from empty parts of a title-bar strip; a double click maximizes or
+    /// restores it, as a native title bar does. The strip has a background (so it paints), which
+    /// would otherwise take those clicks away from the system caption.
+    private void MakeDraggable(Control strip)
+    {
+        strip.PointerPressed += (_, e) =>
+        {
+            if (e.Source is Button or Segmented || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            if (e.Source is Control c && c.FindAncestorOfType<Button>() is not null) return;
+            if (e.ClickCount == 2)
+                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            else
+                BeginMoveDrag(e);
+            e.Handled = true;
+        };
     }
 
     private void ShowTab()
     {
         _content.Content = _model.Tab == AppModel.Tabs.Compare ? new CompareView(_model) : new RatingView(_model);
-    }
-
-    /// Minimal ICommand for key bindings.
-    private sealed class Command(Action run) : System.Windows.Input.ICommand
-    {
-        public event EventHandler? CanExecuteChanged { add { } remove { } }
-        public bool CanExecute(object? parameter) => true;
-        public void Execute(object? parameter) => run();
     }
 }

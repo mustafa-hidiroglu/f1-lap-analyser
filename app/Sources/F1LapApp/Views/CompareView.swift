@@ -65,6 +65,8 @@ private struct PaneDivider: View {
     /// The pane's width as laid out, where a drag starts from.
     let current: CGFloat
     @State private var start: CGFloat?
+    /// The resize cursor is pushed: popped exactly once, even if the view goes away while hovered.
+    @State private var cursorPushed = false
 
     var body: some View {
         Rectangle()
@@ -75,8 +77,10 @@ private struct PaneDivider: View {
                     .frame(width: 8)
                     .contentShape(Rectangle())
                     .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        // Keep the resize cursor through a drag that leaves the grab area.
+                        if inside { pushCursor() } else if start == nil { popCursor() }
                     }
+                    .onDisappear { popCursor() }
                     .gesture(DragGesture(minimumDistance: 1)
                         .onChanged { g in
                             let from = start ?? current
@@ -86,8 +90,21 @@ private struct PaneDivider: View {
                         .onEnded { _ in
                             width = current  // forget any overshoot past the clamp
                             start = nil
+                            popCursor()
                         })
             }
+    }
+
+    private func pushCursor() {
+        guard !cursorPushed else { return }
+        NSCursor.resizeLeftRight.push()
+        cursorPushed = true
+    }
+
+    private func popCursor() {
+        guard cursorPushed else { return }
+        NSCursor.pop()
+        cursorPushed = false
     }
 }
 

@@ -165,11 +165,17 @@ final class AppModel {
             guard year == self.year else { return }
             self.events = events
             if !events.contains(where: { $0.round == self.eventRound }) { self.eventRound = nil }
+            // The same round and session in the new season is a different session: load it
+            // (otherwise the old season's laps would stay under the new season's key).
+            if self.key != nil, let info = self.info, info.year != year { self.loadSession() }
         }
     }
 
     private func loadSession() {
         sessionTask?.cancel()
+        // An in-flight comparison or rating belongs to the previous session.
+        analysisTask?.cancel()
+        ratingTask?.cancel()
         info = nil
         comparison = nil
         rating = nil
@@ -196,6 +202,7 @@ final class AppModel {
     /// Finds this event in `otherYear`'s calendar and loads that session for the compared lap.
     private func loadOtherSession() {
         otherTask?.cancel()
+        analysisTask?.cancel()  // a comparison against the old compared session is stale
         otherKey = nil
         otherInfo = nil
         comparison = nil

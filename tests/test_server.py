@@ -254,6 +254,20 @@ def test_stdio_process(tmp_path: Path, stdout_kind: str, threaded: bool) -> None
     assert lines[1]["error"]["code"] == PARSE_ERROR
 
 
+@pytest.mark.parametrize("threaded", [False, True], ids=["asyncio-io", "threaded-io"])
+def test_stdio_survives_bad_utf8_and_huge_lines(tmp_path: Path, threaded: bool) -> None:
+    ping = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "ping"}).encode()
+    requests = b"\xff\xfe not utf-8\n" + ping + b"\n"
+    if threaded:  # the asyncio path's StreamReader rejects over-long lines outright
+        requests = b"x" * (2 << 20) + b"\n" + requests
+    env = {**os.environ, "F1LAP_THREADED_STDIO": "1" if threaded else ""}
+    cmd = [sys.executable, "-m", "f1lap.server", "--cache-dir", str(tmp_path)]
+    out = subprocess.run(cmd, input=requests, capture_output=True, timeout=60, env=env).stdout
+    lines = [json.loads(x) for x in out.decode().splitlines()]
+    assert lines[-1]["id"] == 7 and "result" in lines[-1]  # still serving after the bad lines
+    assert all(x["error"]["code"] == PARSE_ERROR for x in lines[:-1])
+
+
 def test_default_cache_dir_per_platform() -> None:
     assert default_cache_dir("darwin", {}) == Path.home() / "Library" / "Caches" / "f1lap"
     assert default_cache_dir("win32", {"LOCALAPPDATA": "/appdata"}) == Path(

@@ -191,7 +191,8 @@ To build it from macOS or Linux instead, run `windows/scripts/publish.sh` (the r
 platform. The `F1LAP_*` development variables listed under [Development](#development) work in
 both apps.
 
-Keyboard: Ctrl+Enter compares; Ctrl+Alt+S shows or hides the sidebar.
+Keyboard: Ctrl+Enter compares; Ctrl+Shift+S shows or hides the sidebar. Drag the window by its toolbar;
+double-click the toolbar to maximize it.
 
 ## Using the app
 

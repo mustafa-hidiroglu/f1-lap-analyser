@@ -349,6 +349,7 @@ class _Stdio:
         self._writer: asyncio.StreamWriter | None = None
         self._lines: asyncio.Queue[bytes] | None = None
         self._write_pool: ThreadPoolExecutor | None = None
+        self._closed = False
 
     async def open(self) -> None:
         loop = asyncio.get_running_loop()
@@ -361,6 +362,11 @@ class _Stdio:
                 stdin = sys.stdin.buffer
                 while True:
                     line = stdin.readline(MAX_LINE)
+                    if len(line) == MAX_LINE and not line.endswith(b"\n"):
+                        # Over-long: drop the rest rather than handle its pieces as requests.
+                        while (rest := stdin.readline(MAX_LINE)) and not rest.endswith(b"\n"):
+                            pass
+                        line = b"<request over MAX_LINE dropped>\n"  # answered as a parse error
                     with contextlib.suppress(RuntimeError):  # loop closed: nothing to feed
                         loop.call_soon_threadsafe(lines.put_nowait, line)
                     if not line:
@@ -387,6 +393,8 @@ class _Stdio:
 
     def send(self, data: bytes) -> None:
         """Queues `data` without waiting (progress lines are tiny). Call from the loop."""
+        if self._closed:  # a late progress line after shutdown: nobody is reading
+            return
         if self._write_pool is not None:
             self._write_pool.submit(self.out.write, data)
         elif self._writer is not None:
@@ -405,6 +413,7 @@ class _Stdio:
             self.out.write(data)
 
     def close(self) -> None:
+        self._closed = True
         if self._write_pool is not None:
             self._write_pool.shutdown(wait=True)  # flush queued replies first
         if self._writer is not None:
@@ -441,7 +450,8 @@ async def serve(server: Server, proto_out: int, threaded: bool | None = None) ->
     try:
         while line := await io.readline():
             if line.strip():
-                task = asyncio.create_task(respond(line.decode()))
+                # Bad UTF-8 becomes a parse error for that request, not the end of the server.
+                task = asyncio.create_task(respond(line.decode(errors="replace")))
                 pending.add(task)
                 task.add_done_callback(pending.discard)
         if pending:

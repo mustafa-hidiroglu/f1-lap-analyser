@@ -31,6 +31,7 @@ public sealed class GhostReplayView : UserControl
     /// Playback anchor: replay time `_startT` when `_clock` was last restarted; paused when stopped.
     private double _startT, _speed = 1;
     private bool _resumeAfterScrub, _syncingSlider;
+    private bool? _shownPlaying;
 
     public GhostReplayView(GhostReplay replay, IReadOnlyList<(double X, double Y)> outline,
                            double rotationDeg, string driver, double? lapTimeS, double? simLapTimeS,
@@ -160,7 +161,11 @@ public sealed class GhostReplayView : UserControl
         double t = Now();
         var frame = _replay.FrameAt(t);
         _canvas.Frame = frame;
-        _play.Content = new IconView(Playing ? Glyph.Pause : Glyph.Play) { Width = 14, Height = 14 };
+        if (_shownPlaying != Playing)  // swap the icon on a state change, not every frame
+        {
+            _shownPlaying = Playing;
+            _play.Content = new IconView(Playing ? Glyph.Pause : Glyph.Play) { Width = 14, Height = 14 };
+        }
         _syncingSlider = true;
         _slider.Value = t;
         _syncingSlider = false;
