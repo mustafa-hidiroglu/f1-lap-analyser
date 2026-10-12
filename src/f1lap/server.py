@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
@@ -46,7 +47,20 @@ from f1lap.sim import SimError
 from f1lap.trace import TraceError
 
 PROTOCOL_VERSION: Final = 1
-DEFAULT_CACHE: Final = Path.home() / "Library" / "Caches" / "f1lap"
+def default_cache_dir(platform: str = sys.platform, env: dict[str, str] | None = None) -> Path:
+    """The per-user cache: ~/Library/Caches/f1lap (macOS), %LOCALAPPDATA%\\f1lap\\Cache
+    (Windows), else $XDG_CACHE_HOME/f1lap or ~/.cache/f1lap."""
+    env = dict(os.environ) if env is None else env
+    if platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "f1lap"
+    if platform == "win32":
+        local = env.get("LOCALAPPDATA")
+        return (Path(local) if local else Path.home() / "AppData" / "Local") / "f1lap" / "Cache"
+    xdg = env.get("XDG_CACHE_HOME")
+    return (Path(xdg) if xdg else Path.home() / ".cache") / "f1lap"
+
+
+DEFAULT_CACHE: Final = default_cache_dir()
 TRACK_STEP_M: Final = 5.0  # track-outline resolution sent as JSON
 MAX_LINE: Final = 1 << 20
 
@@ -310,7 +324,8 @@ class Server:
         layout = write_soa(path, columns)
         old = sorted(directory.glob("*.f1soa"), key=lambda f: f.stat().st_mtime, reverse=True)
         for stale in old[self.keep_traces :]:
-            stale.unlink(missing_ok=True)
+            with contextlib.suppress(OSError):  # Windows: still open in the app; next time
+                stale.unlink(missing_ok=True)
         return {"path": str(path), "columns": layout}
 
 
@@ -318,45 +333,113 @@ def _error(rid: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": message}}
 
 
-async def serve(server: Server, proto_out: int) -> None:
-    """Read requests from stdin until EOF; write each response as one line to `proto_out`."""
-    loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader(limit=MAX_LINE)
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
-    out = os.fdopen(proto_out, "wb", buffering=0)
-    writer: asyncio.StreamWriter | None = None
-    try:  # pipe / socket / tty: non-blocking transport with back-pressure
-        transport, protocol = await loop.connect_write_pipe(asyncio.streams.FlowControlMixin, out)
-        writer = asyncio.StreamWriter(transport, protocol, None, loop)
-    except ValueError:  # regular file (e.g. `> log.txt`): writes never wait on a reader
-        pass
-    pending: set[asyncio.Task[None]] = set()
+class _Stdio:
+    """Protocol transport: request lines in from stdin, reply lines out to `proto_out`.
 
-    def send(data: bytes) -> None:
-        if writer is None:
-            out.write(data)
+    Normally asyncio pipes. Windows' proactor loop cannot attach to the anonymous pipes a
+    parent process hands its child (nor can any loop to a regular file), so there a reader
+    thread feeds lines to the loop and one writer thread writes replies in order: the loop
+    itself never blocks on stdio either way.
+    """
+
+    def __init__(self, proto_out: int, threaded: bool) -> None:
+        self.out = os.fdopen(proto_out, "wb", buffering=0)
+        self.threaded = threaded
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._lines: asyncio.Queue[bytes] | None = None
+        self._write_pool: ThreadPoolExecutor | None = None
+
+    async def open(self) -> None:
+        loop = asyncio.get_running_loop()
+        if self.threaded:
+            lines: asyncio.Queue[bytes] = asyncio.Queue()
+            self._lines = lines
+            self._write_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="f1lap-out")
+
+            def pump() -> None:  # daemon thread: blocking reads stay off the loop
+                stdin = sys.stdin.buffer
+                while True:
+                    line = stdin.readline(MAX_LINE)
+                    with contextlib.suppress(RuntimeError):  # loop closed: nothing to feed
+                        loop.call_soon_threadsafe(lines.put_nowait, line)
+                    if not line:
+                        return
+
+            threading.Thread(target=pump, name="f1lap-in", daemon=True).start()
+            return
+        reader = asyncio.StreamReader(limit=MAX_LINE)
+        await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+        self._reader = reader
+        try:  # pipe / socket / tty: non-blocking transport with back-pressure
+            transport, protocol = await loop.connect_write_pipe(
+                asyncio.streams.FlowControlMixin, self.out)
+            self._writer = asyncio.StreamWriter(transport, protocol, None, loop)
+        except ValueError:  # regular file (e.g. `> log.txt`): writes never wait on a reader
+            pass
+
+    async def readline(self) -> bytes:
+        """The next line, or b"" at EOF."""
+        if self._lines is not None:
+            return await self._lines.get()
+        assert self._reader is not None
+        return await self._reader.readline()
+
+    def send(self, data: bytes) -> None:
+        """Queues `data` without waiting (progress lines are tiny). Call from the loop."""
+        if self._write_pool is not None:
+            self._write_pool.submit(self.out.write, data)
+        elif self._writer is not None:
+            self._writer.write(data)
         else:
-            writer.write(data)  # progress lines are tiny: no drain needed
+            self.out.write(data)
+
+    async def write(self, data: bytes) -> None:
+        """Writes `data`, waiting for the reader to take it."""
+        if self._write_pool is not None:
+            await asyncio.get_running_loop().run_in_executor(self._write_pool, self.out.write, data)
+        elif self._writer is not None:
+            self._writer.write(data)
+            await self._writer.drain()
+        else:
+            self.out.write(data)
+
+    def close(self) -> None:
+        if self._write_pool is not None:
+            self._write_pool.shutdown(wait=True)  # flush queued replies first
+        if self._writer is not None:
+            self._writer.close()
+        else:
+            self.out.close()
+
+
+async def serve(server: Server, proto_out: int, threaded: bool | None = None) -> None:
+    """Read requests from stdin until EOF; write each response as one line to `proto_out`.
+
+    `threaded` picks thread-backed stdio (default: on Windows, or when `F1LAP_THREADED_STDIO`
+    is set, which lets the Windows path be tested elsewhere).
+    """
+    if threaded is None:
+        threaded = sys.platform == "win32" or bool(os.environ.get("F1LAP_THREADED_STDIO"))
+    loop = asyncio.get_running_loop()
+    io = _Stdio(proto_out, threaded)
+    await io.open()
+    pending: set[asyncio.Task[None]] = set()
 
     def notify(msg: dict[str, Any]) -> None:
         # Worker-thread progress hops onto the loop, so stdout is only ever written from there.
         with contextlib.suppress(RuntimeError):  # loop already closed: drop it
-            loop.call_soon_threadsafe(send, encode(msg))
+            loop.call_soon_threadsafe(io.send, encode(msg))
 
     server.notify = notify
 
     async def respond(line: str) -> None:
         reply = await server.handle(line)
-        if reply is None:
-            return
-        if writer is None:
-            out.write(encode(reply))
-        else:
-            writer.write(encode(reply))
-            await writer.drain()
+        if reply is not None:
+            await io.write(encode(reply))
 
     try:
-        while line := await reader.readline():
+        while line := await io.readline():
             if line.strip():
                 task = asyncio.create_task(respond(line.decode()))
                 pending.add(task)
@@ -365,10 +448,7 @@ async def serve(server: Server, proto_out: int) -> None:
             await asyncio.gather(*pending)
     finally:
         server.close()
-        if writer is None:
-            out.close()
-        else:
-            writer.close()
+        io.close()
 
 
 def encode(reply: dict[str, Any]) -> bytes:

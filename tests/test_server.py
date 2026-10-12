@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from functools import cached_property
@@ -18,7 +19,14 @@ from f1lap.binary import read_soa, write_soa
 from f1lap.circuit import Circuit, Corner, Segment, corner_segments
 from f1lap.context import LapContext
 from f1lap.resample import resample_to_distance
-from f1lap.server import INVALID_PARAMS, METHOD_NOT_FOUND, PARSE_ERROR, Server, encode
+from f1lap.server import (
+    INVALID_PARAMS,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    Server,
+    default_cache_dir,
+    encode,
+)
 from f1lap.sim import CarModel, SimError, SimLap
 from f1lap.trace import LapMeta, LapTrace, ResampledLap
 
@@ -222,24 +230,37 @@ def test_soa_roundtrip(tmp_path: Path) -> None:
     assert back["g"].dtype == np.int16 and back["g"].tolist() == [1, 2, 3]
 
 
+@pytest.mark.parametrize("threaded", [False, True], ids=["asyncio-io", "threaded-io"])
 @pytest.mark.parametrize("stdout_kind", ["pipe", "file"])
-def test_stdio_process(tmp_path: Path, stdout_kind: str) -> None:
+def test_stdio_process(tmp_path: Path, stdout_kind: str, threaded: bool) -> None:
     requests = "\n".join([
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
         "garbage",
         json.dumps({"jsonrpc": "2.0", "method": "ping"}),  # notification: no reply
     ]) + "\n"
     cmd = [sys.executable, "-m", "f1lap.server", "--cache-dir", str(tmp_path)]
+    # Threaded stdio is what Windows uses; the variable forces it here.
+    env = {**os.environ, "F1LAP_THREADED_STDIO": "1" if threaded else ""}
     if stdout_kind == "pipe":
-        out = subprocess.run(cmd, input=requests.encode(), capture_output=True, timeout=60).stdout
+        out = subprocess.run(cmd, input=requests.encode(), capture_output=True, timeout=60,
+                             env=env).stdout
     else:
         with (tmp_path / "out.txt").open("wb") as fh:
             subprocess.run(cmd, input=requests.encode(), stdout=fh, stderr=subprocess.DEVNULL,
-                           timeout=60, check=True)
+                           timeout=60, check=True, env=env)
         out = (tmp_path / "out.txt").read_bytes()
     lines = [json.loads(x) for x in out.decode().splitlines()]
     assert [x.get("id") for x in lines] == [1, None]  # stdout carries protocol lines only
     assert lines[1]["error"]["code"] == PARSE_ERROR
+
+
+def test_default_cache_dir_per_platform() -> None:
+    assert default_cache_dir("darwin", {}) == Path.home() / "Library" / "Caches" / "f1lap"
+    assert default_cache_dir("win32", {"LOCALAPPDATA": "/appdata"}) == Path(
+        "/appdata/f1lap/Cache")
+    assert default_cache_dir("win32", {}) == Path.home() / "AppData" / "Local" / "f1lap" / "Cache"
+    assert default_cache_dir("linux", {"XDG_CACHE_HOME": "/xdg"}) == Path("/xdg/f1lap")
+    assert default_cache_dir("linux", {}) == Path.home() / ".cache" / "f1lap"
 
 
 def test_compare_sides_from_different_sessions(server: Server, make_lap: MakeLap) -> None:
