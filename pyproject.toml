@@ -3,6 +3,8 @@ name = "f1lap"
 version = "0.1.0"
 description = "High-performance F1 lap telemetry analyser: distance-aligned traces, deltas and corner breakdowns"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Mustafa Can Hidiroglu", email = "vhlp8028@leeds.ac.uk" }
 ]

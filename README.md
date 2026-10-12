@@ -13,6 +13,29 @@ against the perfect lap on the track map, with braking points, slowest points an
 markers and an optional camera that follows the cars. A "★ Fastest" choice picks the session's
 fastest lap without having to know who set it.
 
+## Download
+
+Ready-to-run apps are attached to each [GitHub release](https://github.com/mustafa-hidiroglu/f1-lap-analyser/releases/latest).
+They include their own Python and analysis engine, so nothing else needs to be installed.
+
+| Platform | File | Install |
+|---|---|---|
+| macOS 15+ (Apple Silicon) | `F1Lap-<version>-mac-arm64.dmg` | Open the disk image and drag F1 Lap Analyser to Applications |
+| Windows 10/11 (x64) | `F1Lap-Setup-<version>-win-x64.exe` | Run the installer; it installs for the current user, no admin rights needed |
+
+The apps are not code-signed, so the first launch needs one extra confirmation:
+
+- **macOS:** if the app "can't be opened", go to System Settings → Privacy & Security and click
+  **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/F1Lap.app`.
+- **Windows:** if SmartScreen shows "Windows protected your PC", click **More info → Run anyway**.
+
+An internet connection is needed the first time each session is loaded. Downloaded data is kept
+in `~/Library/Caches/f1lap` and `~/Library/Application Support/F1Lap` on macOS, and in
+`%LOCALAPPDATA%\f1lap` on Windows.
+
+The rest of this README covers building from source and using the Python library and command line
+tool.
+
 ## Requirements
 
 | Component | Requirement |
@@ -39,7 +62,7 @@ installed.
    ```
 
 2. Create the virtual environment and install the dependencies. This creates `.venv/` in the
-   repository, which both apps also use.
+   repository, which the command line tool, the tests and development runs of the apps use.
 
    ```sh
    uv sync
@@ -60,8 +83,8 @@ installed.
 The first load of a session downloads its timing and telemetry from the FastF1 API, which can
 take from several seconds to a few minutes depending on the session and the API's rate limits.
 Later loads come from the local cache. The command line tool keeps its cache in `cache/` and
-processed laps in `data/` (both set in `f1lap.toml` and neither committed to git). The app uses
-its own cache: `~/Library/Caches/f1lap` on macOS, `%LOCALAPPDATA%\f1lap\Cache` on Windows.
+processed laps in `data/` (both set in `f1lap.toml` and neither committed to git). The apps use
+their own cache: `~/Library/Caches/f1lap` on macOS, `%LOCALAPPDATA%\f1lap\Cache` on Windows.
 
 On Windows, use PowerShell: install uv with `winget install astral-sh.uv` (or the uv installer), then
 run the same `uv sync` and `uv run` commands.
@@ -114,7 +137,7 @@ Global options go before the command: `--step 0.5` sets the grid spacing in metr
 
 ## Building and running the macOS app
 
-1. Complete the Python setup above. The app runs the sidecar from this checkout's `.venv/`.
+1. Complete the Python setup above. The bundle is built from this checkout's `uv.lock`.
 
 2. Build the app bundle.
 
@@ -122,8 +145,10 @@ Global options go before the command: `--step 0.5` sets the grid spacing in metr
    app/scripts/bundle.sh
    ```
 
-   This produces `app/build/F1Lap.app` (a release build with an ad-hoc signature) and prints its
-   path.
+   This produces `app/build/F1Lap.app` (a release build with an ad-hoc signature, about 700 MB)
+   and prints its path. It copies uv's relocatable Python 3.13 into
+   `Contents/Resources/python` and installs f1lap with its locked dependencies there, so the app
+   runs from anywhere, without this checkout.
 
 3. Open it, or copy it to `/Applications` first if you prefer.
 
@@ -132,9 +157,17 @@ Global options go before the command: `--step 0.5` sets the grid spacing in metr
    cp -R app/build/F1Lap.app /Applications/
    ```
 
-The app starts `.venv/bin/python -m f1lap.server` from the repository it was built from; that path
-is recorded at build time. If you move the repository, run `bundle.sh` again, or set `F1LAP_REPO`
-to the new location when launching the app from a terminal.
+4. Optionally, package it as a drag-to-Applications disk image
+   (`app/build/F1Lap-<version>-mac-arm64.dmg`).
+
+   ```sh
+   app/scripts/dmg.sh 0.1.0
+   ```
+
+The app starts its sidecar from, in order: the checkout in `F1LAP_REPO` (its `.venv`), the Python
+embedded in the bundle, or the checkout it was built from (a bare `swift run`). The bundled
+sidecar keeps its cache in `~/Library/Caches/f1lap` and its data in
+`~/Library/Application Support/F1Lap`, so nothing is written inside the signed bundle.
 
 The scripts source `app/scripts/env.sh`, which sets `DEVELOPER_DIR` to
 `/Library/Developer/CommandLineTools` unless it is already set. Building with the Command Line
@@ -161,8 +194,8 @@ lap pickers, synced traces, the track map coloured by delta, the corner table, t
 and the ghost replay. It is a native Win32 application (.NET 8 with Avalonia), not a web view, and
 it runs the same Python sidecar.
 
-1. Complete the Python setup above in PowerShell (`uv sync`). The app runs
-   `.venv\Scripts\python.exe -m f1lap.server` from this checkout.
+1. Complete the Python setup above in PowerShell (`uv sync`). A plain build runs
+   `.venv\Scripts\python.exe -m f1lap.server` from this checkout; step 5 embeds Python instead.
 
 2. Install the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
    (`winget install Microsoft.DotNet.SDK.8`).
@@ -182,9 +215,19 @@ it runs the same Python sidecar.
    windows\dist\F1Lap\F1Lap.exe
    ```
 
-The app looks for the repository's `.venv` in `F1LAP_REPO` if set, then in the checkout it was
-built from, then in the folders above the executable. If you move the executable out of the
-repository, set `F1LAP_REPO` or rebuild.
+5. Optionally, make it self-contained and build the installer. `bundle-python.ps1` copies uv's
+   relocatable Python into `windows\dist\F1Lap\python` and installs f1lap with its locked
+   dependencies there; [Inno Setup 6](https://jrsoftware.org/isinfo.php) then packages the folder
+   as `windows\dist\F1Lap-Setup-<version>-win-x64.exe`.
+
+   ```powershell
+   windows\scripts\bundle-python.ps1
+   iscc /DAppVersion=0.1.0 windows\installer\F1Lap.iss
+   ```
+
+The app looks for its sidecar in `F1LAP_REPO` if set, then in the embedded `python\` folder next
+to `F1Lap.exe`, then in the checkout it was built from, then in the folders above the executable.
+The embedded sidecar keeps its cache and data in `%LOCALAPPDATA%\f1lap`.
 
 To build it from macOS or Linux instead, run `windows/scripts/publish.sh` (the result is the same
 `.exe`). For development, `dotnet run --project windows/F1Lap.App` runs the app on the current
@@ -497,13 +540,26 @@ $env:F1LAP_OPEN = "2024/Monza/Qualifying/LEC/SAI"; windows\dist\F1Lap\F1Lap.exe
 - `F1LAP_SNAPSHOT_SIZE=1600x1000` resizes the window before the snapshot.
 - `F1LAP_SNAPSHOT_SIDEBAR=reopen` hides the sidebar, resizes the window, then shows the sidebar
   again before the snapshot (checks that a narrow window never clips the sidebar).
-- `F1LAP_REPO=/path/to/checkout` runs the sidecar from another checkout.
+- `F1LAP_REPO=/path/to/checkout` runs the sidecar from another checkout's `.venv` (this also
+  overrides the Python embedded in a bundled app).
+
+### Releases
+
+`.github/workflows/release.yml` builds both apps on native GitHub runners (macOS 15 and Windows),
+checks that each embedded sidecar answers `ping`, and packages the `.dmg` and the installer.
+Pull requests that touch the apps or the Python package run the same build and attach the files
+to the workflow run without publishing anything. Pushing a version tag from `master` publishes a
+GitHub release with both files:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
 
 ## Roadmap
 
 Done: ingestion and distance resampling; delta time and micro-sectors; circuit model, per-corner
 deltas and phases; driver metrics; lap rating; the macOS app; the perfect lap with reasons and the
-ghost replay; the Windows app.
+ghost replay; the Windows app; self-contained macOS and Windows releases.
 
 Planned: native kernels (C++ with nanobind) where profiling shows NumPy is the bottleneck.
 
@@ -514,3 +570,12 @@ Timing and telemetry data come from the FastF1 library
 respective owners, including Formula 1. This project is unofficial and is not associated with
 Formula 1 or any of its companies. F1, FORMULA ONE and related marks are trademarks of Formula One
 Licensing B.V.
+
+## License
+
+f1lap is released under the [MIT License](LICENSE). Copyright © 2026 Mustafa Can Hidiroglu.
+
+The released apps bundle third-party software under its own licenses, including Python (PSF
+License), FastF1 (MIT), NumPy and SciPy (BSD-3-Clause), pandas (BSD-3-Clause), Polars (MIT),
+PyArrow (Apache-2.0), Matplotlib (Matplotlib License), Requests (Apache-2.0), .NET (MIT) and
+Avalonia (MIT). Their license files ship inside the bundled Python environment.
