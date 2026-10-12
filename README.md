@@ -2,8 +2,9 @@
 
 f1lap analyses Formula 1 lap telemetry from [FastF1](https://github.com/theOehrly/Fast-F1). It is
 made of two parts: a Python library and command line tool that put laps on a common distance grid
-and compare them corner by corner, and a native macOS app (SwiftUI) that uses the library as a
-background process.
+and compare them corner by corner, and a desktop app that uses the library as a background
+process: native on macOS (SwiftUI) and on Windows (.NET with Avalonia), with the same layout and
+features on both.
 
 With it you can compare any two laps (including laps from different seasons at the same event),
 rate a lap against the rest of the field, and measure it against a simulated perfect lap for the
@@ -16,8 +17,9 @@ fastest lap without having to know who set it.
 
 | Component | Requirement |
 |---|---|
-| Operating system | macOS 15 or later (for the app; the Python part also runs elsewhere) |
-| Swift toolchain | Swift 6 (Xcode Command Line Tools; full Xcode is not required) |
+| Operating system | macOS 15 or later, or Windows 10/11 (x64 or Arm64), for the app; the Python part also runs on Linux |
+| Swift toolchain | Swift 6 (Xcode Command Line Tools; full Xcode is not required), for the macOS app |
+| .NET SDK | 8.0, to build the Windows app (running the published `F1Lap.exe` needs no .NET install) |
 | Python | 3.13 or later |
 | Package manager | [uv](https://docs.astral.sh/uv/) |
 | Disk space | Several GB for the FastF1 cache if you load many sessions |
@@ -58,8 +60,11 @@ installed.
 The first load of a session downloads its timing and telemetry from the FastF1 API, which can
 take from several seconds to a few minutes depending on the session and the API's rate limits.
 Later loads come from the local cache. The command line tool keeps its cache in `cache/` and
-processed laps in `data/` (both set in `f1lap.toml` and neither committed to git). The macOS app
-uses its own cache in `~/Library/Caches/f1lap`.
+processed laps in `data/` (both set in `f1lap.toml` and neither committed to git). The app uses
+its own cache: `~/Library/Caches/f1lap` on macOS, `%LOCALAPPDATA%\f1lap\Cache` on Windows.
+
+On Windows, use PowerShell: install uv with `winget install astral-sh.uv` (or the uv installer), then
+run the same `uv sync` and `uv run` commands.
 
 > **Security:** FastF1 stores its HTTP cache as Python pickles. Never point the cache directory at
 > a cache from an untrusted source, as loading it can execute arbitrary code.
@@ -145,6 +150,48 @@ app/scripts/test.sh
 
 Tests that talk to a real sidecar run only when `.venv/` exists; they use the repository's
 `cache/`.
+
+If the window is narrower than the sidebar plus the detail column (760 pt), showing the sidebar
+widens the window rather than clipping the sidebar.
+
+## Building and running the Windows app
+
+The Windows app (`windows/`) has the same layout and features as the macOS app: the sidebar,
+lap pickers, synced traces, the track map coloured by delta, the corner table, the rating report
+and the ghost replay. It is a native Win32 application (.NET 8 with Avalonia), not a web view, and
+it runs the same Python sidecar.
+
+1. Complete the Python setup above in PowerShell (`uv sync`). The app runs
+   `.venv\Scripts\python.exe -m f1lap.server` from this checkout.
+
+2. Install the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+   (`winget install Microsoft.DotNet.SDK.8`).
+
+3. Build the app.
+
+   ```powershell
+   windows\scripts\publish.ps1            # x64; add -Arch arm64 for Windows on Arm
+   ```
+
+   This produces `windows\dist\F1Lap\F1Lap.exe`, a single self-contained executable, and prints its
+   path. It is unsigned (personal use), so SmartScreen may ask you to confirm the first launch.
+
+4. Run it, or pin it to the Start menu or the taskbar.
+
+   ```powershell
+   windows\dist\F1Lap\F1Lap.exe
+   ```
+
+The app looks for the repository's `.venv` in `F1LAP_REPO` if set, then in the checkout it was
+built from, then in the folders above the executable. If you move the executable out of the
+repository, set `F1LAP_REPO` or rebuild.
+
+To build it from macOS or Linux instead, run `windows/scripts/publish.sh` (the result is the same
+`.exe`). For development, `dotnet run --project windows/F1Lap.App` runs the app on the current
+platform. The `F1LAP_*` development variables listed under [Development](#development) work in
+both apps.
+
+Keyboard: Ctrl+Enter compares; Ctrl+Alt+S shows or hides the sidebar.
 
 ## Using the app
 
@@ -356,10 +403,12 @@ point straddling a transition (onset error of at most one step). Pressure export
 provided. In discrete channels, NaN gaps are forward-filled, and non-integer or out-of-range values
 are rejected.
 
-### macOS app sidecar
+### App sidecar
 
-The app runs `f1lap.server` as a child process and talks JSON-RPC 2.0 to it over stdin and stdout,
-one message per line. No network port is opened.
+Both apps run `f1lap.server` as a child process and talk JSON-RPC 2.0 to it over stdin and stdout,
+one message per line. No network port is opened. On Windows, whose asyncio loop cannot attach to
+the anonymous pipes a parent hands its child, the server reads stdin on a thread and writes replies
+through an ordered writer thread; the event loop still never blocks.
 
 ```mermaid
 sequenceDiagram
@@ -394,7 +443,8 @@ sequenceDiagram
 - `.f1soa` trace files are Structure-of-Arrays: each column is contiguous little-endian `f64` or
   `i16` at an 8-byte-aligned offset, described by `columns: [{name, dtype, offset, count}]`. The
   20 newest files are kept.
-- The cache defaults to `~/Library/Caches/f1lap` (`--cache-dir` or `F1LAP_CACHE_DIR`).
+- The cache defaults to `~/Library/Caches/f1lap` on macOS, `%LOCALAPPDATA%\f1lap\Cache` on
+  Windows and `$XDG_CACHE_HOME/f1lap` elsewhere (`--cache-dir` or `F1LAP_CACHE_DIR`).
 
 ## Configuration
 
@@ -410,6 +460,7 @@ uv run pytest -m network           # tests against the live FastF1 API
 uv run ruff check .
 uv run mypy src tests
 app/scripts/test.sh                # Swift tests
+dotnet test windows/F1Lap.Core.Tests    # Windows app core tests (shares the Swift fixtures)
 uv run python app/scripts/fixtures.py   # regenerate Swift test fixtures (needs cache/)
 ```
 
@@ -426,13 +477,15 @@ F1LAP_OPEN=2024/Monza/Qualifying/LEC/SAI app/build/F1Lap.app/Contents/MacOS/F1La
   event in another season. A trailing `/rating` opens the Rating tab.
 - `F1LAP_SNAPSHOT=shot.png` writes the window to a PNG once results have loaded, then quits.
 - `F1LAP_SNAPSHOT_SIZE=1600x1000` resizes the window before the snapshot.
+- `F1LAP_SNAPSHOT_SIDEBAR=reopen` hides the sidebar, resizes the window, then shows the sidebar
+  again before the snapshot (checks that a narrow window never clips the sidebar).
 - `F1LAP_REPO=/path/to/checkout` runs the sidecar from another checkout.
 
 ## Roadmap
 
 Done: ingestion and distance resampling; delta time and micro-sectors; circuit model, per-corner
 deltas and phases; driver metrics; lap rating; the macOS app; the perfect lap with reasons and the
-ghost replay.
+ghost replay; the Windows app.
 
 Planned: native kernels (C++ with nanobind) where profiling shows NumPy is the bottleneck.
 

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>F1Lap</AssemblyName>
+    <RootNamespace>F1Lap.App</RootNamespace>
+    <Product>F1 Lap Analyser</Product>
+    <Version>0.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Avalonia's Win32 backend uses COM (drag and drop, clipboard). -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../F1Lap.Core/F1Lap.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The checkout this was built from: where the app finds the repo's .venv by default
+         (personal use, like the Mac app). F1LAP_REPO overrides it at run time. -->
+    <AssemblyMetadata Include="F1LapRepo" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))" />
+  </ItemGroup>
+
+</Project>
