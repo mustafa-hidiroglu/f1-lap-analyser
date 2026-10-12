@@ -204,7 +204,7 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
         #expect(config.workingDirectory == support)
         #expect(FileManager.default.fileExists(atPath: support.path))
         #expect(config.environment["PYTHONDONTWRITEBYTECODE"] == "1")
-        #expect(config.environment["F1LAP_CACHE_DIR"] == home.appending(path: "Library/Caches/F1Lap").path)
+        #expect(config.environment["F1LAP_CACHE_DIR"] == home.appending(path: "Library/Caches/f1lap").path)
         #expect(config.environment["F1LAP_DATA_DIR"] == support.appending(path: "data").path)
     }
 }

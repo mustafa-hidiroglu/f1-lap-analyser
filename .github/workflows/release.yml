@@ -1,0 +1,122 @@
+# Builds the self-contained apps on native runners. A `v*` tag publishes a GitHub Release with
+# the macOS .dmg and the Windows installer; pull requests touching the packaging only build and
+# smoke-test them (artifacts attached to the run, nothing published).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "app/**"
+      - "windows/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Version
+        run: echo "VERSION=$([[ "$GITHUB_REF" == refs/tags/v* ]] && echo "${GITHUB_REF_NAME#v}" || echo 0.0.0-dev)" >> "$GITHUB_ENV"
+      - name: Toolchain
+        run: |
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+          uv python install 3.13
+      - name: Build F1Lap.app (embedded Python + sidecar)
+        run: app/scripts/bundle.sh
+      - name: Smoke-test the embedded sidecar
+        run: |
+          reply="$(echo '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' |
+            PYTHONDONTWRITEBYTECODE=1 F1LAP_CACHE_DIR="$RUNNER_TEMP/cache" \
+            app/build/F1Lap.app/Contents/Resources/python/bin/python3 -m f1lap.server)"
+          echo "$reply"
+          grep -q '"protocol"' <<<"$reply"
+          codesign --verify --strict app/build/F1Lap.app
+      - name: Disk image
+        run: app/scripts/dmg.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: app/build/*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Version
+        run: |
+          $v = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.0.0-dev" }
+          "VERSION=$v" >> $env:GITHUB_ENV
+      - name: Core tests
+        run: dotnet test windows/F1Lap.Core.Tests
+      - name: Build F1Lap.exe
+        run: windows/scripts/publish.ps1
+      - name: Embed Python + sidecar
+        run: windows/scripts/bundle-python.ps1
+      - name: Smoke-test the embedded sidecar
+        run: |
+          $env:PYTHONDONTWRITEBYTECODE = "1"
+          $env:F1LAP_CACHE_DIR = Join-Path $env:RUNNER_TEMP "cache"
+          $reply = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | windows/dist/F1Lap/python/python.exe -m f1lap.server
+          $reply
+          if ($reply -notmatch '"protocol"') { throw "sidecar did not answer ping" }
+      - name: Installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=$env:VERSION" windows/installer/F1Lap.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: windows/dist/*.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Downloads
+            - **macOS** (Apple Silicon, macOS 15+): `F1Lap-*-mac-arm64.dmg` — open it and drag
+              F1 Lap Analyser to Applications.
+            - **Windows** (x64, Windows 10/11): `F1Lap-Setup-*-win-x64.exe` — installs for the
+              current user, no admin rights needed.
+
+            Both apps include their own Python engine; nothing else needs installing. The first
+            load of each session downloads data from FastF1, so an internet connection is needed.
+
+            ### First launch (the apps are not code-signed)
+            - **macOS:** if it says the app "can't be opened", go to System Settings → Privacy &
+              Security and click **Open Anyway** (or run
+              `xattr -dr com.apple.quarantine "/Applications/F1Lap.app"`).
+            - **Windows:** if SmartScreen shows "Windows protected your PC", click **More info →
+              Run anyway**.

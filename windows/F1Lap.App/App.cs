@@ -45,13 +45,16 @@ public sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// `F1LAP_REPO` if set, else the checkout this was built from, else the nearest folder
-    /// above the executable with a `.venv` (personal use: the app runs the repository's
-    /// virtualenv rather than a bundled interpreter, like the Mac app).
+    /// `F1LAP_REPO` if set, else the interpreter embedded next to the executable (installed
+    /// builds), else the checkout this was built from, else the nearest folder above the
+    /// executable with a `.venv`.
     private static SidecarConfig? LocateSidecar()
     {
         static bool HasVenv(string? dir) => dir is not null && File.Exists(SidecarConfig.VenvPython(dir));
         var env = Environment.GetEnvironmentVariable("F1LAP_REPO");
+        if (string.IsNullOrEmpty(env) && SidecarConfig.Bundled(AppContext.BaseDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)) is { } bundled)
+            return bundled;
         var built = typeof(App).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "F1LapRepo")?.Value;
         string? repo = !string.IsNullOrEmpty(env) ? env : HasVenv(built) ? built : null;

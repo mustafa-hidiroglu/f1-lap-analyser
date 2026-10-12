@@ -45,7 +45,7 @@ public struct SidecarConfig: Sendable {
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",
-                "F1LAP_CACHE_DIR": home.appending(path: "Library/Caches/F1Lap").path,
+                "F1LAP_CACHE_DIR": home.appending(path: "Library/Caches/f1lap").path,
                 "F1LAP_DATA_DIR": support.appending(path: "data").path,
             ]
         )
