@@ -27,6 +27,29 @@ public struct SidecarConfig: Sendable {
             environment: ["PYTHONUNBUFFERED": "1"]
         )
     }
+
+    /// The interpreter `bundle.sh` embeds at `Contents/Resources/python`, or nil if `resources`
+    /// holds none (a bare `swift run` build).
+    public static func bundled(resources: URL, home: URL = .homeDirectory) -> SidecarConfig? {
+        let python = resources.appending(path: "python/bin/python3")
+        guard FileManager.default.isExecutableFile(atPath: python.path) else { return nil }
+        // The bundle is read-only and sealed by its signature: cache, data and the working
+        // directory live in the user's Library, and no bytecode is written next to the sources.
+        let support = home.appending(path: "Library/Application Support/F1Lap")
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        return SidecarConfig(
+            executable: python,
+            arguments: ["-m", "f1lap.server"],
+            workingDirectory: support,
+            environment: [
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1",
+                "F1LAP_CACHE_DIR": home.appending(path: "Library/Caches/f1lap").path,
+                "F1LAP_DATA_DIR": support.appending(path: "data").path,
+            ]
+        )
+    }
 }
 
 public enum SidecarError: Error, Equatable, LocalizedError {

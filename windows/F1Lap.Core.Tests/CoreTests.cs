@@ -262,3 +262,32 @@ public class FmtTests
     [Fact]
     public void Speed() => Assert.Equal("288", Fmt.Speed(287.6));
 }
+
+public class BundledConfigTests
+{
+    private static string Scratch() => Directory.CreateTempSubdirectory().FullName;
+
+    [Fact]
+    public void NullWithoutEmbeddedPython() => Assert.Null(SidecarConfig.Bundled(Scratch(), Scratch()));
+
+    [Fact]
+    public void RunsEmbeddedPythonWithStateInLocalAppData()
+    {
+        var app = Scratch();
+        var local = Scratch();
+        var python = Path.Combine(app, "python", OperatingSystem.IsWindows() ? "python.exe" : "bin/python3");
+        Directory.CreateDirectory(Path.GetDirectoryName(python)!);
+        File.WriteAllText(python, "");
+
+        var config = SidecarConfig.Bundled(app, local);
+        var root = Path.Combine(local, "f1lap");
+        Assert.NotNull(config);
+        Assert.Equal(python, config.Executable);
+        Assert.Equal(["-m", "f1lap.server"], config.Arguments);
+        Assert.Equal(root, config.WorkingDirectory);
+        Assert.True(Directory.Exists(root));
+        Assert.Equal("1", config.Environment!["PYTHONDONTWRITEBYTECODE"]);
+        Assert.Equal(Path.Combine(root, "Cache"), config.Environment["F1LAP_CACHE_DIR"]);
+        Assert.Equal(Path.Combine(root, "Data"), config.Environment["F1LAP_DATA_DIR"]);
+    }
+}

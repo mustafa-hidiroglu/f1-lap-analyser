@@ -176,6 +176,39 @@ private func fixture<T: Decodable>(_ name: String, as: T.Type = T.self) throws -
     }
 }
 
+// MARK: - Bundled sidecar (Contents/Resources/python, as laid out by bundle.sh)
+
+@Suite struct BundledConfigTests {
+    private func scratch() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @Test func nilWithoutEmbeddedPython() throws {
+        #expect(SidecarConfig.bundled(resources: try scratch()) == nil)
+    }
+
+    @Test func runsEmbeddedPythonWithStateOutsideTheBundle() throws {
+        let resources = try scratch(), home = try scratch()
+        let bin = resources.appending(path: "python/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let python = bin.appending(path: "python3")
+        FileManager.default.createFile(
+            atPath: python.path, contents: Data(), attributes: [.posixPermissions: 0o755])
+
+        let config = try #require(SidecarConfig.bundled(resources: resources, home: home))
+        let support = home.appending(path: "Library/Application Support/F1Lap")
+        #expect(config.executable == python)
+        #expect(config.arguments == ["-m", "f1lap.server"])
+        #expect(config.workingDirectory == support)
+        #expect(FileManager.default.fileExists(atPath: support.path))
+        #expect(config.environment["PYTHONDONTWRITEBYTECODE"] == "1")
+        #expect(config.environment["F1LAP_CACHE_DIR"] == home.appending(path: "Library/Caches/f1lap").path)
+        #expect(config.environment["F1LAP_DATA_DIR"] == support.appending(path: "data").path)
+    }
+}
+
 // MARK: - Ghost replay (synthetic lap: perfect car 50 m/s, rated car 40 m/s, straight line)
 
 @Suite struct GhostReplayTests {

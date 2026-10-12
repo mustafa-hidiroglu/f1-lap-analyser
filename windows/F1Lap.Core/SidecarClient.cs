@@ -19,6 +19,27 @@ public sealed record SidecarConfig(
     public static string VenvPython(string repo) => OperatingSystem.IsWindows()
         ? Path.Combine(repo, ".venv", "Scripts", "python.exe")
         : Path.Combine(repo, ".venv", "bin", "python");
+
+    /// The interpreter `bundle-python.ps1` embeds at `python\python.exe` next to F1Lap.exe, or
+    /// null if `appDir` holds none (a development build).
+    public static SidecarConfig? Bundled(string appDir, string localAppData)
+    {
+        var python = Path.Combine(appDir, "python", OperatingSystem.IsWindows() ? "python.exe" : "bin/python3");
+        if (!File.Exists(python)) return null;
+        // The install folder may be read-only: cache, data and the working directory live in
+        // %LOCALAPPDATA%\f1lap (the sidecar's own default cache root), with no bytecode writes.
+        var root = Path.Combine(localAppData, "f1lap");
+        Directory.CreateDirectory(root);
+        return new(python, ["-m", "f1lap.server"], root, new Dictionary<string, string>
+        {
+            ["PYTHONUNBUFFERED"] = "1",
+            ["PYTHONIOENCODING"] = "utf-8",
+            ["PYTHONDONTWRITEBYTECODE"] = "1",
+            ["PYTHONNOUSERSITE"] = "1",
+            ["F1LAP_CACHE_DIR"] = Path.Combine(root, "Cache"),
+            ["F1LAP_DATA_DIR"] = Path.Combine(root, "Data"),
+        });
+    }
 }
 
 public class SidecarException(string message) : Exception(message);
