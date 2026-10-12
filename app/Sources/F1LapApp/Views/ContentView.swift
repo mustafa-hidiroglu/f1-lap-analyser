@@ -7,7 +7,7 @@ struct ContentView: View {
         @Bindable var model = model
         NavigationSplitView {
             SessionSidebar()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 340)
         } detail: {
             VStack(spacing: 0) {
                 LapBar()
@@ -21,6 +21,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 StatusBar()
             }
+            // An honest minimum: everything in the detail column fits (or wraps) in this width, so
+            // the window's minimum is sidebar + detail and opening the sidebar never clips it.
+            .frame(minWidth: AppLayout.detailMinWidth, minHeight: 640)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("View", selection: $model.tab) {
@@ -80,31 +83,56 @@ struct LapBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-        HStack(spacing: 16) {
-            LapPicker(title: "Reference", color: Palette.reference, info: model.info,
-                      choice: $model.reference)
-            LapPicker(title: "Compared", color: Palette.other, info: model.otherSessionInfo,
-                      choice: $model.other) {
-                Picker("Season", selection: $model.otherYear) {
-                    Text("Same session").tag(Int?.none)
-                    Divider()
-                    ForEach(AppModel.seasons.filter { $0 != model.year }, id: \.self) {
-                        Text(String($0)).tag(Optional($0))
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 130)
-                .help("Compare against the same event in another season")
+        // One row when it fits; otherwise the compared lap drops onto a second row, so the bar
+        // never forces the detail column wider than the window.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                referencePicker
+                comparedPicker
+                Spacer(minLength: 0)
+                compareButton
             }
-            Spacer()
-            Button("Compare", systemImage: "chart.xyaxis.line") { model.compare() }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!model.canCompare)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 16) {
+                    referencePicker
+                    Spacer(minLength: 0)
+                    compareButton
+                }
+                comparedPicker
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .disabled(model.info == nil)
+    }
+
+    private var referencePicker: some View {
+        @Bindable var model = model
+        return LapPicker(title: "Reference", color: Palette.reference, info: model.info,
+                         choice: $model.reference)
+    }
+
+    private var comparedPicker: some View {
+        @Bindable var model = model
+        return LapPicker(title: "Compared", color: Palette.other, info: model.otherSessionInfo,
+                         choice: $model.other) {
+            Picker("Season", selection: $model.otherYear) {
+                Text("Same session").tag(Int?.none)
+                Divider()
+                ForEach(AppModel.seasons.filter { $0 != model.year }, id: \.self) {
+                    Text(String($0)).tag(Optional($0))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 130)
+            .help("Compare against the same event in another season")
+        }
+    }
+
+    private var compareButton: some View {
+        Button("Compare", systemImage: "chart.xyaxis.line") { model.compare() }
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(!model.canCompare)
     }
 }
 
@@ -197,6 +225,12 @@ struct StatusBar: View {
             .background(.bar)
         }
     }
+}
+
+enum AppLayout {
+    /// Narrowest the detail column gets: the Compare tab's chart pane (440) and track pane (300)
+    /// minimums plus the divider; everything else in the column fits or wraps in that.
+    static let detailMinWidth: CGFloat = 760
 }
 
 struct Placeholder: View {

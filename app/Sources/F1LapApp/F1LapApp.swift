@@ -11,12 +11,15 @@ struct F1LapApp: App {
         WindowGroup("F1 Lap Analyser") {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 1100, minHeight: 720)
                 .task {
                     DevSnapshot.scheduleIfRequested(model)
                     await model.start()
                 }
         }
+        // The window's minimum follows the content: the sidebar (when shown) plus the detail
+        // column's minimum, instead of a fixed width the content did not actually fit in.
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1280, height: 820)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Compare") { model.compare() }

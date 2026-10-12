@@ -45,7 +45,7 @@ private struct RatingReport: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 32) {
+            FlowLayout(spacing: 32, lineSpacing: 12) {
                 Gauge(value: r.score, in: 0...100) {
                     Text("Score")
                 } currentValueLabel: {
@@ -131,7 +131,7 @@ private struct PerfectReport: View {
                 Label("No perfect lap for this session: \(error)", systemImage: "info.circle")
                     .foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 32) {
+                FlowLayout(spacing: 32, lineSpacing: 12) {
                     stat("Perfect lap", Fmt.lapTime(p.simLapTimeS))
                     stat("Gap", Fmt.delta(p.gapS))
                     stat("Best laps' gap", Fmt.delta(p.typicalGapS))

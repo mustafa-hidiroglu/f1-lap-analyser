@@ -44,12 +44,23 @@ struct GhostReplayView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Text("Ghost replay").foregroundStyle(.secondary)
-                Spacer()
-                legend
-                Toggle("Markers", isOn: $showMarkers)
-                Toggle("Follow", isOn: $follow)
+            // The legend sits beside the toggles when it fits, else on its own wrapping line.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Text("Ghost replay").foregroundStyle(.secondary)
+                    Spacer()
+                    legend
+                    toggles
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        Text("Ghost replay").foregroundStyle(.secondary)
+                        Spacer()
+                        toggles
+                    }
+                    FlowLayout(spacing: 8, lineSpacing: 4) { legendItems }
+                        .foregroundStyle(.secondary)
+                }
             }
             .font(.caption)
             .toggleStyle(.checkbox)
@@ -178,22 +189,42 @@ struct GhostReplayView: View {
         .font(.callout)
     }
 
+    private var toggles: some View {
+        HStack(spacing: 12) {
+            Toggle("Markers", isOn: $showMarkers)
+            Toggle("Follow", isOn: $follow)
+        }
+    }
+
     private var legend: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 8) { legendItems }
+            .foregroundStyle(.secondary)
+    }
+
+    /// Each swatch with its label, as one item so a wrapping layout keeps them together.
+    @ViewBuilder private var legendItems: some View {
+        HStack(spacing: 4) {
             Circle().fill(Palette.braking).frame(width: 7, height: 7)
             Text("Braking")
+        }
+        HStack(spacing: 4) {
             Circle().fill(Palette.lifting).frame(width: 7, height: 7)
             Text("\(driver) lift / part throttle")
-            if showMarkers {
+        }
+        if showMarkers {
+            HStack(spacing: 4) {
                 Rectangle().frame(width: 2, height: 9).padding(.leading, 6)
                 Text("Braking point (\(driver): pedal)")
+            }
+            HStack(spacing: 4) {
                 Circle().stroke(lineWidth: 1.5).frame(width: 6, height: 6)
                 Text("Slowest point")
+            }
+            HStack(spacing: 4) {
                 Circle().frame(width: 6, height: 6)
                 Text("\(driver) full throttle")
             }
         }
-        .foregroundStyle(.secondary)
     }
 
     private static func label(_ phase: GhostReplay.Phase) -> String {

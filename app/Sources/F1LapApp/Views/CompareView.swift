@@ -1,3 +1,4 @@
+import AppKit
 import Charts
 import F1LapKit
 import SwiftUI
@@ -9,26 +10,39 @@ struct CompareView: View {
     /// Visible distance window, shared so all charts zoom and scroll together.
     @State private var window: ClosedRange<Double>?
     @State private var selectedCorner: String?
+    /// Preferred width of the track/corner pane; clamped to what the column leaves it.
+    @State private var paneWidth = CompareView.paneIdeal
+
+    static let chartsMin: CGFloat = 440
+    static let paneMin: CGFloat = 300
+    static let paneIdeal: CGFloat = 420
 
     var body: some View {
         if let c = model.comparison {
-            HSplitView {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Summary(result: c.result)
-                        TraceCharts(c: c, cursor: $cursor, window: $window)
+            // Not HSplitView: NSSplitView doesn't pass its panes' minimums up to the window and
+            // clips the last pane when short of room, which pushed the sidebar half off-screen.
+            GeometryReader { geo in
+                let pane = min(max(paneWidth, Self.paneMin),
+                               max(Self.paneMin, geo.size.width - Self.chartsMin - 1))
+                HStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Summary(result: c.result)
+                            TraceCharts(c: c, cursor: $cursor, window: $window)
+                        }
+                        .padding(14)
                     }
-                    .padding(14)
+                    .frame(minWidth: Self.chartsMin, maxWidth: .infinity)
+                    PaneDivider(width: $paneWidth, current: pane)
+                    VSplitView {
+                        TrackMap(traces: c.traces, circuit: c.result.circuit, cursor: cursor,
+                                 window: window)
+                            .frame(minHeight: 260)
+                        CornerTable(result: c.result, selection: $selectedCorner)
+                            .frame(minHeight: 200)
+                    }
+                    .frame(width: pane)
                 }
-                .frame(minWidth: 560)
-                VSplitView {
-                    TrackMap(traces: c.traces, circuit: c.result.circuit, cursor: cursor,
-                             window: window)
-                        .frame(minHeight: 260)
-                    CornerTable(result: c.result, selection: $selectedCorner)
-                        .frame(minHeight: 200)
-                }
-                .frame(minWidth: 340, idealWidth: 420)
             }
             .onChange(of: selectedCorner) {
                 guard let name = selectedCorner,
@@ -45,13 +59,45 @@ struct CompareView: View {
     }
 }
 
+/// A 1 pt divider with a wider grab area; dragging it resizes the pane to its right.
+private struct PaneDivider: View {
+    @Binding var width: CGFloat
+    /// The pane's width as laid out, where a drag starts from.
+    let current: CGFloat
+    @State private var start: CGFloat?
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .overlay {
+                Color.clear
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(DragGesture(minimumDistance: 1)
+                        .onChanged { g in
+                            let from = start ?? current
+                            start = from
+                            width = from - g.translation.width
+                        }
+                        .onEnded { _ in
+                            width = current  // forget any overshoot past the clamp
+                            start = nil
+                        })
+            }
+    }
+}
+
 // MARK: - Summary
 
 private struct Summary: View {
     let result: CompareResult
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 28) {
+        FlowLayout(spacing: 28, lineSpacing: 10) {
             // Name the season when the laps come from different years.
             let years = result.reference.year != result.other.year
             stat(Fmt.lap(result.reference, year: years), Fmt.lapTime(result.reference.lapTimeS),
