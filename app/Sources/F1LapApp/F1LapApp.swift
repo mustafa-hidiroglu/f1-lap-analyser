@@ -41,10 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension SidecarConfig {
-    /// `F1LAP_REPO` if set, else the checkout this file was built from (personal use: the app runs
-    /// the repository's virtualenv rather than a bundled interpreter).
+    /// `F1LAP_REPO` if set, else the interpreter embedded in the .app by `bundle.sh`, else the
+    /// checkout this file was built from (a bare `swift run`).
     static func located() -> SidecarConfig {
-        let repo = ProcessInfo.processInfo.environment["F1LAP_REPO"].map { URL(filePath: $0) }
+        let env = ProcessInfo.processInfo.environment["F1LAP_REPO"].map { URL(filePath: $0) }
+        if env == nil, let resources = Bundle.main.resourceURL,
+           let bundled = SidecarConfig.bundled(resources: resources) {
+            return bundled
+        }
+        let repo = env
             ?? URL(filePath: #filePath)  // app/Sources/F1LapApp/F1LapApp.swift
                 .deletingLastPathComponent().deletingLastPathComponent()
                 .deletingLastPathComponent().deletingLastPathComponent()
