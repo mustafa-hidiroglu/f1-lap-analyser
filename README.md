@@ -39,7 +39,7 @@ installed.
    ```
 
 2. Create the virtual environment and install the dependencies. This creates `.venv/` in the
-   repository, which the macOS app also uses.
+   repository, which both apps also use.
 
    ```sh
    uv sync
@@ -196,7 +196,14 @@ double-click the toolbar to maximize it.
 
 ## Using the app
 
-1. Choose a season, an event and a session in the toolbar. The session's drivers and laps load in
+The macOS and Windows apps have the same layout and controls; only the shortcuts differ.
+
+| Action | macOS | Windows |
+|---|---|---|
+| Compare | Command-Return | Ctrl+Enter |
+| Show or hide the sidebar | toolbar button | toolbar button, or Ctrl+Shift+S |
+
+1. Choose a season, an event and a session in the sidebar. The session's drivers and laps load in
    the background; a progress message shows while data is downloaded.
 
 2. Choose the **Reference** and **Compared** laps. For each side, pick a driver, or "★ Fastest"
@@ -204,11 +211,17 @@ double-click the toolbar to maximize it.
    invalid laps are marked ✕). The season menu next to the compared lap takes it from the same
    event in another season.
 
-3. Press **Compare** (Command-Return).
+3. Press **Compare**.
 
 The **Compare** tab shows speed, delta, throttle and brake, and gear traces against distance, a
-track map coloured by where time is gained and lost, and a per-corner table. Selecting a corner
-row zooms the traces to that corner.
+track map coloured by where time is gained and lost, and a per-corner table. Hovering over a chart
+moves a pointer across every chart and the track map; dragging across a chart zooms all of them to
+that stretch (**Show full lap** zooms back out). Selecting a corner row zooms the traces to that
+corner. The divider between the charts and the track map can be dragged.
+
+The window never cuts off part of the layout. In a narrow window the lap pickers wrap onto two
+rows, and showing the sidebar widens the window instead of clipping the sidebar. On Windows, a
+maximized window on a small screen hides the sidebar when both columns can't fit.
 
 The **Rating** tab rates either the reference or the compared lap (chosen with the segmented
 control, then **Rate**). It shows the score, the time lost per corner against the driver's own best
@@ -413,15 +426,15 @@ through an ordered writer thread; the event loop still never blocks.
 
 ```mermaid
 sequenceDiagram
-    participant App as SwiftUI app
+    participant App as App (SwiftUI or Avalonia)
     participant S as f1lap-server (asyncio)
     participant W as worker thread
     App->>S: {"method":"compare", ...}\n
     S->>W: run_in_executor (FastF1 / pandas, serialised)
     W-->>S: summary + corners + metrics
-    W->>W: write traces to ~/Library/Caches/f1lap/traces/*.f1soa
+    W->>W: write traces to <cache>/traces/*.f1soa
     S-->>App: {"result": {..., "traces": {"path", "columns"}}}\n
-    App->>App: mmap .f1soa, view columns in place
+    App->>App: read .f1soa columns (memory-mapped on macOS)
 ```
 
 | Method | Params | Result |
@@ -465,11 +478,15 @@ dotnet test windows/F1Lap.Core.Tests    # Windows app core tests (shares the Swi
 uv run python app/scripts/fixtures.py   # regenerate Swift test fixtures (needs cache/)
 ```
 
-The app reads a few environment variables that help during development. Run the binary directly
+Both apps read a few environment variables that help during development. Run the binary directly
 so that they reach it:
 
 ```sh
 F1LAP_OPEN=2024/Monza/Qualifying/LEC/SAI app/build/F1Lap.app/Contents/MacOS/F1Lap
+```
+
+```powershell
+$env:F1LAP_OPEN = "2024/Monza/Qualifying/LEC/SAI"; windows\dist\F1Lap\F1Lap.exe
 ```
 
 - `F1LAP_OPEN=YEAR/EVENT/SESSION/REF/OTHER[/rating]` opens a session and compares the two drivers'
