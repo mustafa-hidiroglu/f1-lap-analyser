@@ -1,0 +1,606 @@
+{
+ "reference": {
+  "driver": "LEC",
+  "lap_number": 20,
+  "lap_time_s": 79.461,
+  "year": 2024,
+  "event": "Italian Grand Prix",
+  "session": "Qualifying",
+  "source": "fastf1"
+ },
+ "other": {
+  "driver": "NOR",
+  "lap_number": 11,
+  "lap_time_s": 79.327,
+  "year": 2024,
+  "event": "Italian Grand Prix",
+  "session": "Qualifying",
+  "source": "fastf1"
+ },
+ "grid": {
+  "step_m": 1.0,
+  "samples": 5761,
+  "length_m": 5760.101204888299
+ },
+ "final_delta_s": -0.13400647955106137,
+ "lap_time_delta_s": -0.13400000000000034,
+ "max_gain_s": -0.1781943721176873,
+ "max_gain_at_m": 5212.0,
+ "max_loss_s": 0.3772204949431526,
+ "max_loss_at_m": 2113.0,
+ "sectors": [
+  {
+   "name": "T1-2",
+   "start_m": 0.0,
+   "end_m": 1198.0,
+   "ref_time_s": 18.161212993289286,
+   "other_time_s": 18.229442455317393,
+   "delta_s": 0.06822946202810698,
+   "ref_min_speed": 75.0,
+   "other_min_speed": 73.06415405211942
+  },
+  {
+   "name": "T3",
+   "start_m": 1198.0,
+   "end_m": 1777.0,
+   "ref_time_s": 6.900245949899077,
+   "other_time_s": 6.945618680129574,
+   "delta_s": 0.04537273023049693,
+   "ref_min_speed": 259.0,
+   "other_min_speed": 258.7288495558156
+  },
+  {
+   "name": "T4-5",
+   "start_m": 1777.0,
+   "end_m": 2334.0,
+   "ref_time_s": 9.442748288746046,
+   "other_time_s": 9.443238814173512,
+   "delta_s": 0.000490525427466082,
+   "ref_min_speed": 111.00000247153763,
+   "other_min_speed": 113.2895643790013
+  },
+  {
+   "name": "T6",
+   "start_m": 2334.0,
+   "end_m": 2676.0,
+   "ref_time_s": 5.22661193284047,
+   "other_time_s": 5.1594628536987415,
+   "delta_s": -0.06714907914172841,
+   "ref_min_speed": 204.1008345949469,
+   "other_min_speed": 207.206349678191
+  },
+  {
+   "name": "T7",
+   "start_m": 2676.0,
+   "end_m": 3367.0,
+   "ref_time_s": 9.68066378718747,
+   "other_time_s": 9.587912092576872,
+   "delta_s": -0.09275169461059818,
+   "ref_min_speed": 187.0506657678576,
+   "other_min_speed": 190.03036728879158
+  },
+  {
+   "name": "T8-10",
+   "start_m": 3367.0,
+   "end_m": 4640.0,
+   "ref_time_s": 15.997222192405395,
+   "other_time_s": 15.897715543443525,
+   "delta_s": -0.09950664896187078,
+   "ref_min_speed": 191.0053393976938,
+   "other_min_speed": 194.07502728895324
+  },
+  {
+   "name": "T11",
+   "start_m": 4640.0,
+   "end_m": 5760.0,
+   "ref_time_s": 14.0511598878212,
+   "other_time_s": 14.062468113298266,
+   "delta_s": 0.011308225477066003,
+   "ref_min_speed": 209.08114394543293,
+   "other_min_speed": 215.09509794352857
+  }
+ ],
+ "corners": [
+  {
+   "name": "T1-2",
+   "start_m": 0.0,
+   "end_m": 1197.5,
+   "delta_s": 0.06822946202810698,
+   "phase_delta_s": {
+    "approach": 0.06802785409071532,
+    "braking": 0.05442386743366967,
+    "mid": 0.005080802980288013,
+    "exit": -0.06844753396818604,
+    "straight": 0.00914447149162001
+   },
+   "reference": {
+    "name": "T1-2",
+    "entry_m": 762.0,
+    "brake_on_m": 763.0,
+    "brake_off_m": 905.0,
+    "brake_applications": 2,
+    "apex_m": 944.0,
+    "mid_start_m": 937.0,
+    "mid_end_m": 952.0,
+    "pickup_m": 913.0,
+    "full_throttle_m": 1001.0,
+    "entry_speed": 347.2425702587415,
+    "apex_speed": 75.0,
+    "exit_speed": 133.89998730896565,
+    "flat": false
+   },
+   "other": {
+    "name": "T1-2",
+    "entry_m": 763.0,
+    "brake_on_m": 789.0,
+    "brake_off_m": 900.0,
+    "brake_applications": 2,
+    "apex_m": 941.0,
+    "mid_start_m": 934.0,
+    "mid_end_m": 949.0,
+    "pickup_m": 946.0,
+    "full_throttle_m": 992.0,
+    "entry_speed": 343.1332218237984,
+    "apex_speed": 73.06415405211942,
+    "exit_speed": 128.71870897502748,
+    "flat": false
+   }
+  },
+  {
+   "name": "T3",
+   "start_m": 1197.5,
+   "end_m": 1777.0,
+   "delta_s": 0.04537273023049693,
+   "phase_delta_s": {
+    "approach": 0.014256331012337142,
+    "braking": 0.0,
+    "mid": 0.0,
+    "exit": 0.0,
+    "straight": 0.031116399218159785
+   },
+   "reference": {
+    "name": "T3",
+    "entry_m": 1453.0,
+    "brake_on_m": null,
+    "brake_off_m": null,
+    "brake_applications": 0,
+    "apex_m": 1453.0,
+    "mid_start_m": 1453.0,
+    "mid_end_m": 1453.0,
+    "pickup_m": 1453.0,
+    "full_throttle_m": 1453.0,
+    "entry_speed": 303.0,
+    "apex_speed": 303.0,
+    "exit_speed": 303.0,
+    "flat": true
+   },
+   "other": {
+    "name": "T3",
+    "entry_m": 1453.0,
+    "brake_on_m": null,
+    "brake_off_m": null,
+    "brake_applications": 0,
+    "apex_m": 1453.0,
+    "mid_start_m": 1453.0,
+    "mid_end_m": 1453.0,
+    "pickup_m": 1453.0,
+    "full_throttle_m": 1453.0,
+    "entry_speed": 301.4535246732807,
+    "apex_speed": 301.4535246732807,
+    "exit_speed": 301.4535246732807,
+    "flat": true
+   }
+  },
+  {
+   "name": "T4-5",
+   "start_m": 1777.0,
+   "end_m": 2334.0,
+   "delta_s": 0.000490525427466082,
+   "phase_delta_s": {
+    "approach": 0.029447538898654813,
+    "braking": 0.23294073568454365,
+    "mid": -0.035653801861034395,
+    "exit": -0.11998413346432812,
+    "straight": -0.10625981383036986
+   },
+   "reference": {
+    "name": "T4-5",
+    "entry_m": 1988.0,
+    "brake_on_m": 2007.0,
+    "brake_off_m": 2109.0,
+    "brake_applications": 1,
+    "apex_m": 2119.0,
+    "mid_start_m": 2114.0,
+    "mid_end_m": 2131.0,
+    "pickup_m": 2114.0,
+    "full_throttle_m": 2179.0,
+    "entry_speed": 328.6942752387211,
+    "apex_speed": 111.00000247153763,
+    "exit_speed": 131.0,
+    "flat": false
+   },
+   "other": {
+    "name": "T4-5",
+    "entry_m": 1979.0,
+    "brake_on_m": 1990.0,
+    "brake_off_m": 2095.0,
+    "brake_applications": 1,
+    "apex_m": 2113.0,
+    "mid_start_m": 2097.0,
+    "mid_end_m": 2122.0,
+    "pickup_m": 2112.0,
+    "full_throttle_m": 2176.0,
+    "entry_speed": 322.8126912052554,
+    "apex_speed": 113.2895643790013,
+    "exit_speed": 151.1263782548732,
+    "flat": false
+   }
+  },
+  {
+   "name": "T6",
+   "start_m": 2334.0,
+   "end_m": 2675.5,
+   "delta_s": -0.06714907914172841,
+   "phase_delta_s": {
+    "approach": -0.0005191502867418762,
+    "braking": -0.01640086657189954,
+    "mid": -0.015748583675517125,
+    "exit": -0.007374617641275449,
+    "straight": -0.027105860966294415
+   },
+   "reference": {
+    "name": "T6",
+    "entry_m": 2411.0,
+    "brake_on_m": 2427.0,
+    "brake_off_m": 2504.0,
+    "brake_applications": 1,
+    "apex_m": 2530.0,
+    "mid_start_m": 2496.0,
+    "mid_end_m": 2552.0,
+    "pickup_m": 2505.0,
+    "full_throttle_m": 2578.0,
+    "entry_speed": 263.0217260141033,
+    "apex_speed": 204.1008345949469,
+    "exit_speed": 223.74644965013854,
+    "flat": false
+   },
+   "other": {
+    "name": "T6",
+    "entry_m": 2406.0,
+    "brake_on_m": 2423.0,
+    "brake_off_m": 2495.0,
+    "brake_applications": 1,
+    "apex_m": 2523.0,
+    "mid_start_m": 2497.0,
+    "mid_end_m": 2553.0,
+    "pickup_m": 2506.0,
+    "full_throttle_m": 2553.0,
+    "entry_speed": 263.0,
+    "apex_speed": 207.206349678191,
+    "exit_speed": 217.4230377220975,
+    "flat": false
+   }
+  },
+  {
+   "name": "T7",
+   "start_m": 2675.5,
+   "end_m": 3367.0,
+   "delta_s": -0.09275169461059818,
+   "phase_delta_s": {
+    "approach": -0.00540825201623818,
+    "braking": -0.01657002987772671,
+    "mid": -0.03442766030330091,
+    "exit": -0.0025046307695220094,
+    "straight": -0.03384112164381037
+   },
+   "reference": {
+    "name": "T7",
+    "entry_m": 2750.0,
+    "brake_on_m": 2766.0,
+    "brake_off_m": 2810.0,
+    "brake_applications": 1,
+    "apex_m": 2847.0,
+    "mid_start_m": 2813.0,
+    "mid_end_m": 2877.0,
+    "pickup_m": 2811.0,
+    "full_throttle_m": 2886.0,
+    "entry_speed": 267.89236892078884,
+    "apex_speed": 187.0506657678576,
+    "exit_speed": 202.95198697460938,
+    "flat": false
+   },
+   "other": {
+    "name": "T7",
+    "entry_m": 2741.0,
+    "brake_on_m": 2764.0,
+    "brake_off_m": 2816.0,
+    "brake_applications": 1,
+    "apex_m": 2840.0,
+    "mid_start_m": 2824.0,
+    "mid_end_m": 2875.0,
+    "pickup_m": 2836.0,
+    "full_throttle_m": 2875.0,
+    "entry_speed": 269.0503612404617,
+    "apex_speed": 190.03036728879158,
+    "exit_speed": 199.34709596837436,
+    "flat": false
+   }
+  },
+  {
+   "name": "T8-10",
+   "start_m": 3367.0,
+   "end_m": 4640.0,
+   "delta_s": -0.09950664896187078,
+   "phase_delta_s": {
+    "approach": 0.028449426069940387,
+    "braking": -0.03298605967024315,
+    "mid": -0.02677809203904502,
+    "exit": -0.0020832503898020605,
+    "straight": -0.06610867293272094
+   },
+   "reference": {
+    "name": "T8-10",
+    "entry_m": 3783.0,
+    "brake_on_m": 3805.0,
+    "brake_off_m": 3914.0,
+    "brake_applications": 1,
+    "apex_m": 3915.0,
+    "mid_start_m": 3892.0,
+    "mid_end_m": 3956.0,
+    "pickup_m": 3915.0,
+    "full_throttle_m": 3958.0,
+    "entry_speed": 339.80150615070175,
+    "apex_speed": 191.0053393976938,
+    "exit_speed": 200.937408818543,
+    "flat": false
+   },
+   "other": {
+    "name": "T8-10",
+    "entry_m": 3780.0,
+    "brake_on_m": 3827.0,
+    "brake_off_m": 3886.0,
+    "brake_applications": 1,
+    "apex_m": 3923.0,
+    "mid_start_m": 3899.0,
+    "mid_end_m": 3954.0,
+    "pickup_m": 3913.0,
+    "full_throttle_m": 3954.0,
+    "entry_speed": 336.0000314788153,
+    "apex_speed": 194.07502728895324,
+    "exit_speed": 203.44580279757218,
+    "flat": false
+   }
+  },
+  {
+   "name": "T11",
+   "start_m": 4640.0,
+   "end_m": 5760.0,
+   "delta_s": 0.011308225477066003,
+   "phase_delta_s": {
+    "approach": 0.04236870409724247,
+    "braking": -0.0487302293174281,
+    "mid": -0.025833549014393498,
+    "exit": 0.0,
+    "straight": 0.04350329971164513
+   },
+   "reference": {
+    "name": "T11",
+    "entry_m": 4997.0,
+    "brake_on_m": 4998.0,
+    "brake_off_m": 5118.0,
+    "brake_applications": 1,
+    "apex_m": 5129.0,
+    "mid_start_m": 5108.0,
+    "mid_end_m": 5176.0,
+    "pickup_m": 5119.0,
+    "full_throttle_m": 5176.0,
+    "entry_speed": 329.0,
+    "apex_speed": 209.08114394543293,
+    "exit_speed": 219.3841108272134,
+    "flat": false
+   },
+   "other": {
+    "name": "T11",
+    "entry_m": 4998.0,
+    "brake_on_m": 5024.0,
+    "brake_off_m": 5106.0,
+    "brake_applications": 1,
+    "apex_m": 5156.0,
+    "mid_start_m": 5120.0,
+    "mid_end_m": 5198.0,
+    "pickup_m": 5134.0,
+    "full_throttle_m": 5198.0,
+    "entry_speed": 326.01475544854543,
+    "apex_speed": 215.09509794352857,
+    "exit_speed": 225.5929168220352,
+    "flat": false
+   }
+  }
+ ],
+ "metrics": [
+  {
+   "driver": "LEC",
+   "lap_number": 20,
+   "lap_time_s": 79.45986503218894,
+   "full_throttle_s": 58.01067667890574,
+   "full_throttle_pct": 73.0062612809697,
+   "braking_s": 11.28483796328922,
+   "braking_pct": 14.201934471846593,
+   "coasting_s": 0.4534819197790707,
+   "coasting_pct": 0.5707056255322943,
+   "throttle_smoothness": 0.9070642529487629,
+   "brake_source": "on/off",
+   "corners": [
+    {
+     "name": "T1-2",
+     "flat": false,
+     "throttle_smoothness": 0.9999999999999998,
+     "throttle_ramp_s": 2.0470128543903225,
+     "throttle_ramp_rate": 36.24457035312893,
+     "throttle_lifts": 0,
+     "peak_decel_g": 5.0159387713208305,
+     "decel_rise_s": 0.5289836565449537,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T3",
+     "flat": true,
+     "throttle_smoothness": null,
+     "throttle_ramp_s": null,
+     "throttle_ramp_rate": null,
+     "throttle_lifts": 0,
+     "peak_decel_g": null,
+     "decel_rise_s": null,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T4-5",
+     "flat": false,
+     "throttle_smoothness": 0.7764684379052148,
+     "throttle_ramp_s": 1.892353098187801,
+     "throttle_ramp_rate": 39.38924953160403,
+     "throttle_lifts": 1,
+     "peak_decel_g": 5.0016334015434625,
+     "decel_rise_s": 0.3748521085307708,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T6",
+     "flat": false,
+     "throttle_smoothness": 0.7202137750895301,
+     "throttle_ramp_s": 1.2328553634811996,
+     "throttle_ramp_rate": 56.656709787486605,
+     "throttle_lifts": 1,
+     "peak_decel_g": 1.6807375900730337,
+     "decel_rise_s": 0.35547415932625626,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T7",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 1.4045846652403355,
+     "throttle_ramp_rate": 53.52417346031104,
+     "throttle_lifts": 0,
+     "peak_decel_g": 2.689690818385082,
+     "decel_rise_s": 0.22252412182653813,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T8-10",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 0.7860161372961372,
+     "throttle_ramp_rate": 45.73067733311501,
+     "throttle_lifts": 0,
+     "peak_decel_g": 4.705711594250145,
+     "decel_rise_s": 0.39046013236613675,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T11",
+     "flat": false,
+     "throttle_smoothness": 0.9945098850712748,
+     "throttle_ramp_s": 0.956791277665701,
+     "throttle_ramp_rate": 67.94855616709168,
+     "throttle_lifts": 0,
+     "peak_decel_g": 3.128326299220846,
+     "decel_rise_s": 0.2641478596805058,
+     "brake_rise_s": null
+    }
+   ]
+  },
+  {
+   "driver": "NOR",
+   "lap_number": 11,
+   "lap_time_s": 79.32585855263788,
+   "full_throttle_s": 59.08405110434539,
+   "full_throttle_pct": 74.48271242490148,
+   "braking_s": 9.554480577404908,
+   "braking_pct": 12.044597753789057,
+   "coasting_s": 2.60274654822228,
+   "coasting_pct": 3.2810821032528605,
+   "throttle_smoothness": 0.9210775848690963,
+   "brake_source": "on/off",
+   "corners": [
+    {
+     "name": "T1-2",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 1.651768748772822,
+     "throttle_ramp_rate": 45.65180043288568,
+     "throttle_lifts": 0,
+     "peak_decel_g": 5.017317859357007,
+     "decel_rise_s": 0.6502182918181845,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T3",
+     "flat": true,
+     "throttle_smoothness": null,
+     "throttle_ramp_s": null,
+     "throttle_ramp_rate": null,
+     "throttle_lifts": 0,
+     "peak_decel_g": null,
+     "decel_rise_s": null,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T4-5",
+     "flat": false,
+     "throttle_smoothness": 0.695012738342318,
+     "throttle_ramp_s": 1.731934683934437,
+     "throttle_ramp_rate": 41.797784940820385,
+     "throttle_lifts": 1,
+     "peak_decel_g": 4.243144349579636,
+     "decel_rise_s": 0.3755773902793358,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T6",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 0.7976403687062401,
+     "throttle_ramp_rate": 95.93933780752765,
+     "throttle_lifts": 0,
+     "peak_decel_g": 1.4228666009719984,
+     "decel_rise_s": 0.36563207269210807,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T7",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 0.7179399077716226,
+     "throttle_ramp_rate": 104.13794213003334,
+     "throttle_lifts": 0,
+     "peak_decel_g": 2.495215116698662,
+     "decel_rise_s": 0.36296460020670906,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T8-10",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 0.7447133064437921,
+     "throttle_ramp_rate": 106.01992540189302,
+     "throttle_lifts": 0,
+     "peak_decel_g": 4.429986346882133,
+     "decel_rise_s": 0.41072484086414107,
+     "brake_rise_s": null
+    },
+    {
+     "name": "T11",
+     "flat": false,
+     "throttle_smoothness": 1.0,
+     "throttle_ramp_s": 1.0488799794174781,
+     "throttle_ramp_rate": 74.92626790339351,
+     "throttle_lifts": 0,
+     "peak_decel_g": 2.499531121235073,
+     "decel_rise_s": 0.2197878263846178,
+     "brake_rise_s": null
+    }
+   ]
+  }
+ ]
+}
