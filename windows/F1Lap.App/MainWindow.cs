@@ -37,6 +37,7 @@ public sealed class MainWindow : Window
     {
         _model = model;
         Title = "F1 Lap Analyser";
+        Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://F1Lap/F1Lap.ico")));
         Width = 1280;
         Height = 820;
         MinHeight = 640;

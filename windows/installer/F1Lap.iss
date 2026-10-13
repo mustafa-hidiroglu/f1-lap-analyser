@@ -22,6 +22,7 @@ OutputBaseFilename=F1Lap-Setup-{#AppVersion}-win-x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 UninstallDisplayIcon={app}\F1Lap.exe
+SetupIconFile=..\F1Lap.App\F1Lap.ico
 WizardStyle=modern
 
 [Tasks]

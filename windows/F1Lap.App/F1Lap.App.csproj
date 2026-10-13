@@ -11,6 +11,7 @@
     <Product>F1 Lap Analyser</Product>
     <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>F1Lap.ico</ApplicationIcon>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Avalonia's Win32 backend uses COM (drag and drop, clipboard). -->
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
@@ -21,6 +22,11 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.2" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Window and taskbar icon (the exe's own icon is ApplicationIcon above). -->
+    <AvaloniaResource Include="F1Lap.ico" />
   </ItemGroup>
 
   <ItemGroup>
