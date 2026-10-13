@@ -3,10 +3,12 @@
 # f1lap
 
 f1lap analyses Formula 1 lap telemetry from [FastF1](https://github.com/theOehrly/Fast-F1). It is
-made of two parts: a Python library and command line tool that put laps on a common distance grid
-and compare them corner by corner, and a desktop app that uses the library as a background
-process: native on macOS (SwiftUI) and on Windows (.NET with Avalonia), with the same layout and
-features on both.
+made of three parts: a Python library and command line tool that put laps on a common distance grid
+and compare them corner by corner; a desktop app that uses the library as a background process,
+native on macOS (SwiftUI) and on Windows (.NET with Avalonia), with the same layout and features
+on both; and a web app at [f1-lap-analyser.vercel.app](https://f1-lap-analyser.vercel.app) that
+shows the same comparison and rating for recent seasons in the browser, from data the library
+precomputes.
 
 With it you can compare any two laps (including laps from different seasons at the same event),
 rate a lap against the rest of the field, and measure it against a simulated perfect lap for the
@@ -16,6 +18,12 @@ markers and an optional camera that follows the cars. A "★ Fastest" choice pic
 fastest lap without having to know who set it.
 
 ## Download
+
+To try it without installing anything, open the web app at
+[f1-lap-analyser.vercel.app](https://f1-lap-analyser.vercel.app). It covers the qualifying and race
+sessions of 2024 to 2026, using each driver's fastest lap, and has the Compare and Rating tabs.
+The desktop apps add every season FastF1 covers, every lap, practice and sprint sessions, and the
+ghost replay.
 
 Ready-to-run apps are attached to each [GitHub release](https://github.com/mustafa-hidiroglu/f1-lap-analyser/releases/latest).
 They include their own Python and analysis engine, so nothing else needs to be installed.
@@ -46,6 +54,7 @@ tool.
 | Swift toolchain | Swift 6 (Xcode Command Line Tools; full Xcode is not required), for the macOS app |
 | .NET SDK | 8.0, to build the Windows app (running the published `F1Lap.exe` needs no .NET install) |
 | Python | 3.13 or later |
+| Node.js | 20.9 or later, for the web app |
 | Package manager | [uv](https://docs.astral.sh/uv/) |
 | Disk space | Several GB for the FastF1 cache if you load many sessions |
 | Network | Needed the first time each session is loaded |
@@ -238,6 +247,44 @@ both apps.
 
 Keyboard: Ctrl+Enter compares; Ctrl+Shift+S shows or hides the sidebar. Drag the window by its toolbar;
 double-click the toolbar to maximize it.
+
+## Building and deploying the web app
+
+The web app in `web/` is a static [Next.js](https://nextjs.org) site with no server: `next build`
+writes plain files to `web/out/`, and the browser does the drawing. It reads precomputed data
+from `web/public/data/`, which `tools/web_export.py` writes with the same library the desktop apps
+use. The data is not committed (about 64 MB for 2024 to 2026), so it has to be exported before
+building.
+
+1. Export the sessions. This loads every session through FastF1, so it takes a while the first
+   time; it is resumable, skipping sessions already on disk unless `--force` is given:
+
+   ```sh
+   uv run python tools/web_export.py --years 2024 2025 2026
+   ```
+
+   FastF1 allows 500 API calls an hour. A season is about 48 sessions and fits under that limit,
+   but if `RateLimitExceededError` shows up, wait an hour and run the same command again. Sessions
+   that fail are listed under `failures` in `web/public/data/index.json`.
+
+2. Install, test and build:
+
+   ```sh
+   cd web
+   npm ci
+   npm test                         # includes parity tests against the Python output
+   npm run build                    # writes web/out/
+   npm start                        # serves web/out/ on a local port
+   ```
+
+3. Deploy the built folder to Vercel. Because the data is not in Git, a Git-triggered Vercel build
+   would have no data, so deploy `web/out/` from your machine with the Vercel CLI, including
+   `vercel.json` for its clean URLs and cache headers:
+
+   ```sh
+   cp vercel.json out/
+   npx vercel deploy --prod --cwd out
+   ```
 
 ## Using the app
 
@@ -520,6 +567,7 @@ uv run ruff check .
 uv run mypy src tests
 app/scripts/test.sh                # Swift tests
 dotnet test windows/F1Lap.Core.Tests    # Windows app core tests (shares the Swift fixtures)
+(cd web && npm test)               # web app tests (parity tests need web/public/data)
 uv run python app/scripts/fixtures.py   # regenerate Swift test fixtures (needs cache/)
 ```
 
@@ -569,7 +617,7 @@ committed `app/Resources/F1Lap.icns` (app and disk image) and `windows/F1Lap.App
 
 Done: ingestion and distance resampling; delta time and micro-sectors; circuit model, per-corner
 deltas and phases; driver metrics; lap rating; the macOS app; the perfect lap with reasons and the
-ghost replay; the Windows app; self-contained macOS and Windows releases.
+ghost replay; the Windows app; self-contained macOS and Windows releases; the web app.
 
 Planned: native kernels (C++ with nanobind) where profiling shows NumPy is the bottleneck.
 
@@ -577,7 +625,8 @@ Planned: native kernels (C++ with nanobind) where profiling shows NumPy is the b
 
 Timing and telemetry data come from the FastF1 library
 ([github.com/theOehrly/Fast-F1](https://github.com/theOehrly/Fast-F1)) and belong to their
-respective owners, including Formula 1. This project is unofficial and is not associated with
+respective owners, including Formula 1. The web app serves lap data precomputed from them. This
+project is unofficial and is not associated with
 Formula 1 or any of its companies. F1, FORMULA ONE and related marks are trademarks of Formula One
 Licensing B.V.
 
@@ -589,3 +638,7 @@ The released apps bundle third-party software under its own licenses, including 
 License), FastF1 (MIT), NumPy and SciPy (BSD-3-Clause), pandas (BSD-3-Clause), Polars (MIT),
 PyArrow (Apache-2.0), Matplotlib (Matplotlib License), Requests (Apache-2.0), .NET (MIT) and
 Avalonia (MIT). Their license files ship inside the bundled Python environment.
+
+The web app uses Next.js, React and Phosphor Icons (all MIT), whose licenses are in
+`web/node_modules` after `npm ci`. The MIT License covers the code in this repository only, not
+the timing and telemetry data the web app serves (see [Data and credits](#data-and-credits)).
