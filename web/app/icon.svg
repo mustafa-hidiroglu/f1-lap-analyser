@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>F1 Lap Analyser</title>
+  <!-- F1 Lap Analyser app icon, "Pulse" (design/logo-concepts/03-pulse). One speed trace through
+       one corner: flat out, the stab of braking, the climb back. It dives toward the apex (red dot)
+       and bends around it without touching. Light continuous-corner tile with a subtle gradient. -->
+  <!-- After editing, render f1lap-icon-1024.png and run build-icons.sh. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8E8ED"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#bg)" d="M86.18 25H169.82C208.97 25 231 47.03 231 86.18V169.82C231 208.97 208.97 231 169.82 231H86.18C47.03 231 25 208.97 25 169.82V86.18C25 47.03 47.03 25 86.18 25Z"/>
+  <g transform="translate(48.64 46.64) scale(0.62)">
+    <path fill="none" stroke="#1D1D1F" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"
+          d="M28 86H64C90 86 96 166 120 166C148 166 166 86 198 86H228"/>
+    <circle cx="122" cy="126" r="14" fill="#E8352B"/>
+  </g>
+</svg>

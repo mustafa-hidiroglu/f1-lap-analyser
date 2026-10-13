@@ -1,0 +1,80 @@
+{
+  "brand": "F1 Lap Analyser",
+  "tagline": "Where the hundredth went",
+  "brief": "A lap analysis tool for Formula 1 telemetry: two drivers' laps on synced speed, throttle and brake traces, a delta-time line, a track map coloured by who is faster, lap ratings against the field and a physics-simulated perfect lap. Native macOS app, Windows app and static web app. The mark should tell a story, be simple yet emotionally complicated, and feel as if F1 and Apple had a child.",
+  "adjectives": ["precise", "restrained", "longing", "fast", "human"],
+  "criteria": "Success: one idea per mark, a story in two sentences, tension inside the simplicity, reads at 16 px and in one colour, sits naturally in a macOS dock. No cars, helmets, wheels or fruit; not two racing lines through a corner (the current icon).",
+  "mockups": ["app-icon", "favicon-tab", "website", "readme", "sticker", "tshirt"],
+  "nav": ["Compare", "Rate", "Perfect lap", "Download"],
+  "brand_color": "#E8352B",
+  "tile_color": "#0B0B0D",
+  "greyscale": false,
+  "designer": "Logo concepts, round 1",
+  "round": 1,
+  "concepts": [
+    {
+      "name": "Ghost",
+      "symbol": "01-ghost/mark.svg",
+      "symbol_on_tile": "01-ghost/mark-on-dark.svg",
+      "symbol_on_dark": "01-ghost/mark-on-dark.svg",
+      "idea": "You (the solid disc) and the ghost of your better lap (the ring) a hundredth ahead. They never touch.",
+      "rationale": [
+        "Two primitives, one gap: Apple-level restraint, reads at 16 px",
+        "The ghost car is how F1 visualises the chase; here it is your own better self",
+        "Tension: presence vs. absence, almost touching, forever"
+      ]
+    },
+    {
+      "name": "Delta",
+      "symbol": "02-delta/mark.svg",
+      "idea": "The delta glyph; its hollow leans forward - the time you have not found yet.",
+      "rationale": [
+        "The one symbol every timing screen shares",
+        "Heavy trailing side, hairline leading side: motion without speed lines",
+        "Risk: rounded triangles can read as a warning sign"
+      ]
+    },
+    {
+      "name": "Pulse",
+      "symbol": "03-pulse/mark.svg",
+      "symbol_on_tile": "03-pulse/mark-on-dark.svg",
+      "symbol_on_dark": "03-pulse/mark-on-dark.svg",
+      "idea": "A speed trace through one corner bends around the apex and never touches it.",
+      "rationale": [
+        "Drawn from the app's own speed trace: flat out, brake, the long climb back",
+        "Doubles as a heartbeat and a held breath",
+        "Risk: thin at 16 px; leans toward a tick"
+      ]
+    },
+    {
+      "name": "Slipped Square",
+      "symbol": "04-slipped-square/mark.svg",
+      "symbol_on_tile": "04-slipped-square/mark-on-dark.svg",
+      "symbol_on_dark": "04-slipped-square/mark-on-dark.svg",
+      "idea": "The chequered flag with one square slipped out of line: the hundredth you left on track.",
+      "rationale": [
+        "Racing heritage used once, as nine squares",
+        "Second reading: a die showing five - precision vs. luck",
+        "Strong silhouette at every size"
+      ]
+    },
+    {
+      "name": "Hundredth",
+      "symbol": "05-hundredth/mark.svg",
+      "symbol_on_tile": "05-hundredth/mark-on-dark.svg",
+      "symbol_on_dark": "05-hundredth/mark-on-dark.svg",
+      "idea": "The number the whole app exists to explain, with its last digit in red.",
+      "rationale": [
+        "Timing-screen numerals drawn soft and round",
+        "The smallest number carrying the greatest weight",
+        "Needs a small-size cut (.01) below 32 px"
+      ]
+    }
+  ],
+  "recommendation": "Ghost - the simplest form with the deepest story. Two shapes, one gap; it reads at 16 px, survives one colour, feels at home in a macOS dock, and it is the app's whole purpose (chasing a better version of a lap) in one glance.",
+  "next_steps": [
+    "Pick a direction (or tell me what you like in each)",
+    "Refine geometry, colour and small-size cut",
+    "Replace the app icon (Mac .icns, Windows .ico, web favicon)"
+  ]
+}
