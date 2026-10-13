@@ -64,13 +64,17 @@ class LoadedSession:
 
     @cached_property
     def valid_laps(self) -> list[ResampledLap]:
-        """Accurate, not deleted, no pit in/out, within `quick_threshold` of the fastest lap."""
+        """Accurate, not deleted, no pit in/out, within `quick_threshold` of the fastest lap.
+        Laps whose telemetry cannot be resampled are left out."""
         rows = [row for _, row in valid_rows(self.ses, self.quick_threshold).iterlaps()]
         laps = []
         for i, row in enumerate(rows):
             if self.progress is not None and i % 25 == 0:
                 self.progress(i, len(rows))
-            laps.append(self._resampled(row))
+            try:  # e.g. a car whose distance channel is unusable (ALB, 2025 Monza race)
+                laps.append(self._resampled(row))
+            except (KeyError, ValueError, TraceError):
+                continue
         return laps
 
     def calibration_laps(self, k: int = CALIBRATION_LAPS) -> list[ResampledLap]:
