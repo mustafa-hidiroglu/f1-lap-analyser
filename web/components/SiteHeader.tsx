@@ -9,7 +9,18 @@ export function SiteHeader() {
         className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-6 px-4 md:px-8"
       >
         <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-          <span aria-hidden className="block h-3.5 w-3.5 rounded-[3px] bg-accent" />
+          {/* Pulse mark (assets/brand/f1lap-icon.svg): one speed trace bending around the apex. */}
+          <svg aria-hidden viewBox="20 72 222 108" className="h-4 w-auto">
+            <path
+              d="M28 86H64C90 86 96 166 120 166C148 166 166 86 198 86H228"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="20"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle cx="122" cy="126" r="14" fill="#E8352B" />
+          </svg>
           F1 Lap Analyser
         </Link>
         <ul className="flex items-center gap-5 text-sm text-muted">
