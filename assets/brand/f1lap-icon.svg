@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>F1 Lap Analyser</title>
+  <!-- F1 Lap Analyser app icon. Two racing lines through one corner: the reference lap (blue)
+       and the compared lap (orange) start level; blue finishes ahead, and the gap is the delta.
+       Colours are the apps' dark-mode system blue/orange (Format.swift Palette, MacTheme.cs).
+       Stroke-based with a subtle tile gradient: an app-icon master, not a print logo. -->
+  <!-- After editing, render f1lap-icon-1024.png and run build-icons.sh. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2C2C2E"/>
+      <stop offset="1" stop-color="#141416"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="50" fill="url(#bg)"/>
+  <g fill="none" stroke-linecap="round" stroke-width="20">
+    <path d="M60 196 V162 A96 96 0 0 1 156 66 H166" stroke="#FF9F0A"/>
+    <path d="M100 196 V162 A56 56 0 0 1 156 106 H200" stroke="#0A84FF"/>
+  </g>
+</svg>

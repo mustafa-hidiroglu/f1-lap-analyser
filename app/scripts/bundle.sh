@@ -17,6 +17,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key><string>F1Lap</string>
+  <key>CFBundleIconFile</key><string>F1Lap</string>
   <key>CFBundleIdentifier</key><string>local.f1lap.app</string>
   <key>CFBundleName</key><string>F1 Lap Analyser</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -32,6 +33,7 @@ PLIST
 # locked dependencies plus f1lap itself into it, so the .app runs without this checkout.
 res="$app/Contents/Resources"
 mkdir -p "$res"
+cp Resources/F1Lap.icns "$res/"  # from assets/brand/build-icons.sh
 managed="$(uv python find --managed-python '>=3.13')"
 base="$("$managed" -c 'import sys; print(sys.base_prefix)')"
 cp -R "$base" "$res/python"

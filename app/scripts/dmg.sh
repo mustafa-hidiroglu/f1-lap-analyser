@@ -11,7 +11,18 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
+cp Resources/F1Lap.icns "$stage/.VolumeIcon.icns"
 dmg="build/F1Lap-$version-mac-arm64.dmg"
 rm -f "$dmg"
-hdiutil create -quiet -volname "F1 Lap Analyser" -srcfolder "$stage" -fs APFS -format UDZO "$dmg"
+
+# The volume icon only shows if the volume root has the custom-icon Finder flag, which
+# -srcfolder doesn't carry over: build read-write, set the flag on the mounted root, compress.
+rw="$stage.rw.dmg"
+hdiutil create -quiet -volname "F1 Lap Analyser" -srcfolder "$stage" -fs APFS -format UDRW "$rw"
+mnt="$(mktemp -d)"
+hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$mnt" "$rw"
+xcrun SetFile -a C "$mnt"
+hdiutil detach -quiet "$mnt"
+hdiutil convert -quiet "$rw" -format UDZO -o "$dmg"
+rm -f "$rw"
 echo "$PWD/$dmg"

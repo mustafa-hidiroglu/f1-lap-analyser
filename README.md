@@ -1,3 +1,5 @@
+<img src="assets/brand/f1lap-icon-1024.png" alt="F1 Lap Analyser icon" width="96" align="right">
+
 # f1lap
 
 f1lap analyses Formula 1 lap telemetry from [FastF1](https://github.com/theOehrly/Fast-F1). It is
@@ -554,6 +556,12 @@ GitHub release with both files:
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```
+
+The app icon's source is `assets/brand/f1lap-icon.svg`: the reference (blue) and compared
+(orange) racing lines through one corner, with blue finishing ahead. After changing it, render
+`assets/brand/f1lap-icon-1024.png` and run `assets/brand/build-icons.sh`, which writes the
+committed `app/Resources/F1Lap.icns` (app and disk image) and `windows/F1Lap.App/F1Lap.ico`
+(exe, window and installer).
 
 ## Roadmap
 
